@@ -10,7 +10,7 @@
 <title>3축 차트 (BB·ADX·Volume)</title>
 <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
 <style>
-body{margin:0;font-family:-apple-system,BlinkMacSystemFont,sans-serif;background:#0f1115;color:#d6d9e0}
+body{overflow-x:hidden;margin:0;font-family:-apple-system,BlinkMacSystemFont,sans-serif;background:#0f1115;color:#d6d9e0}
 header{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px 14px;border-bottom:1px solid #222}
 header h1{font-size:15px;margin:0 12px 0 0}
 header small{color:#7d8590;font-weight:400}
@@ -68,6 +68,7 @@ tr.det>td{background:#12161d;white-space:normal;text-align:left;cursor:default}
 .vt td:nth-child(n+2){font-variant-numeric:tabular-nums}
 .ok{color:#3ee08f}.ng{color:#ff6b6b}.wk{color:#d6b656}
 @media (max-width:900px){.secs{grid-template-columns:1fr}}
+#backbtn:disabled{opacity:.35}
 #lock{position:fixed;inset:0;z-index:999;background:#0f1115;display:flex;align-items:center;justify-content:center}
 #lock form{background:#151920;border:1px solid #2a2e38;border-radius:10px;padding:22px;width:min(320px,88vw);display:flex;flex-direction:column;gap:10px}
 #lock h2{margin:0;font-size:18px}#lock p{margin:0;color:#9aa1ad;font-size:13px}
@@ -84,6 +85,7 @@ tr.det>td{background:#12161d;white-space:normal;text-align:left;cursor:default}
 </head>
 <body>
 <header><div class="top">
+  <button class="tab" id="backbtn" onclick="goBack()" title="이전 화면">◀ 이전</button>
   <h1>3축 차트</h1>
   <div class="srch"><input id="q" placeholder="종목·섹터 검색 (이름·코드, 예: 삼성 / 005930 / AAPL / 반도체)" autocomplete="off"><div id="sugg"></div></div>
   <button class="tab" data-v="H">홈</button>
@@ -209,9 +211,20 @@ const RG_COL={'응축':'#c99a00','횡보':'#555c68','추세시작↑':'#2e9d63',
 const rgBadge=r=>`<span class="badge" style="background:${RG_COL[r]||'#333'}33;color:${RG_COL[r]||'#ccc'}">${r}</span>`;
 
 // ---------- 탭 ----------
-function showTab(v){document.querySelectorAll('header .tab').forEach(x=>x.classList.toggle('on',x.dataset.v===v));
+// ---------- 이전 화면 이동 ----------
+// 탭 전환·종목 이동을 브라우저 방문 기록(?s=종목&t=탭)에 남겨 ◀ 버튼·폰 뒤로가기 키로 되돌아감. d = 앱 안에서 이동한 깊이
+const depth=()=>history.state?.d||0;
+function navUrl(id,t){const u=new URL(location.href);u.searchParams.set('s',id);u.searchParams.set('t',t);u.searchParams.delete('v');return u.toString();}
+function updBack(){const b=document.getElementById('backbtn');if(b)b.disabled=depth()<1&&(localStorage.getItem('tab')==='H');}
+function goBack(){if(depth()>0)history.back();else if(localStorage.getItem('tab')!=='H')showTab('H');}
+window.addEventListener('popstate',()=>{const q=new URLSearchParams(location.search);
+  if(CUR&&q.get('s')&&q.get('s')!==CUR.id){location.reload();return}  // 다른 종목 화면으로 돌아감 → 다시 불러오기
+  showTab(q.get('t')||'H',false);});
+function showTab(v,push=true){
+  if(push&&CUR&&new URLSearchParams(location.search).get('t')!==v)history.pushState({d:depth()+1},'',navUrl(CUR.id,v));
+  document.querySelectorAll('header .tab').forEach(x=>x.classList.toggle('on',x.dataset.v===v));
   document.querySelectorAll('.view').forEach(s=>s.classList.toggle('on',s.id===v));
-  localStorage.setItem('tab',v);if(v==='C'&&window.onShowC)window.onShowC();if(v==='S')drawSector();if(v==='H')drawHome();if(v==='V')drawVal();}
+  localStorage.setItem('tab',v);updBack();if(v==='C'&&window.onShowC)window.onShowC();if(v==='S')drawSector();if(v==='H')drawHome();if(v==='V')drawVal();}
 document.querySelectorAll('header .tab[data-v]').forEach(b=>b.onclick=()=>showTab(b.dataset.v));
 
 // ---------- 검색 ----------
@@ -228,7 +241,8 @@ q.onkeydown=e=>{if(e.key==='ArrowDown'){act=Math.min(act+1,hits.length-1);render
   else if(e.key==='ArrowUp'){act=Math.max(act-1,0);renderSugg();e.preventDefault()}
   else if(e.key==='Enter'&&hits[act])go(hits[act].id);else if(e.key==='Escape'){sg.style.display='none'}};
 q.onblur=()=>setTimeout(()=>sg.style.display='none',150);
-function go(id){localStorage.setItem('last',id);if(['H','V'].includes(localStorage.getItem('tab')))localStorage.setItem('tab','A');const u=new URL(location.href);u.searchParams.set('s',id);location.href=u.toString();}
+function go(id){localStorage.setItem('last',id);const cur=localStorage.getItem('tab'),t=['B','C'].includes(cur)?cur:'A';
+  sessionStorage.setItem('navd',String(depth()+1));location.href=navUrl(id,t);}  // 새 페이지에서 깊이를 이어받음
 
 // ---------- 섹터 ----------
 const secName=it=>it.s;
@@ -591,8 +605,11 @@ window.__chart={N,bars,adx,pdi,mdi,score,sq,waveLab,markers}; // 점검용(파�
   try{VAL=await (await fetch(DATA+'validation.json',{cache:'no-cache'})).json()}catch(e){VAL=null}
   const want=new URLSearchParams(location.search).get('s')||localStorage.getItem('last')||'KR:005930';
   CUR=U.find(it=>it.id===want)||U.find(it=>it.id==='KR:005930')||U[0];
-  const hasS=new URLSearchParams(location.search).has('s'),lt=localStorage.getItem('tab');
-  showTab(hasS?(lt&&!['H','V'].includes(lt)?lt:'A'):'H');
+  const qs=new URLSearchParams(location.search),hasS=qs.has('s'),lt=localStorage.getItem('tab');
+  const nd=+(sessionStorage.getItem('navd')||0);sessionStorage.removeItem('navd');
+  const t0=qs.get('t')||(hasS?(lt&&!['H','V'].includes(lt)?lt:'A'):'H');
+  history.replaceState({d:history.state?.d??nd},'',navUrl(CUR.id,t0));
+  showTab(t0,false);
   document.getElementById('smk').value=CUR.id.startsWith('US')||CUR.id.startsWith('SEC:US')?'US':'KR';fillSectors();
   if(!CUR.id.startsWith('SEC:'))document.getElementById('ssec').value=CUR.s;
   const it=CUR,code=it.id.split(':')[1];
