@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BB · ADX · Volume 3축 시안</title>
+<script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+<style>
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,sans-serif;background:#0f1115;color:#d6d9e0}
+header{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px 14px;border-bottom:1px solid #222}
+header h1{font-size:15px;margin:0 12px 0 0}
+header small{color:#7d8590;font-weight:400}
+.tab{background:#1a1d24;border:1px solid #2a2e38;color:#cfd3dc;padding:6px 12px;border-radius:6px;cursor:pointer;font-size:13px}
+.tab.on{background:#2d6cdf;border-color:#2d6cdf;color:#fff}
+.view{display:none;padding:8px 14px}.view.on{display:block}
+.legend{font-size:12px;color:#9aa1ad;margin:4px 0 6px;display:flex;flex-wrap:wrap;gap:4px 14px}
+.sw{display:inline-block;width:12px;height:12px;border-radius:2px;vertical-align:-2px;margin-right:4px}
+.info{font-size:12px;font-family:ui-monospace,Menlo,monospace;color:#cfd3dc;min-height:18px;margin-bottom:4px}
+.pt{font-size:11px;color:#7d8590;margin:4px 0 0}
+.desc{font-size:12px;color:#7d8590;margin:2px 0 6px}
+#sc{width:100%;max-width:960px;height:460px;display:block}
+.ctl{display:flex;gap:10px;align-items:center;margin:6px 0;max-width:960px}
+.ctl input{flex:1;min-width:120px}.ctl .tab{white-space:nowrap;flex:none}
+</style>
+</head>
+<body>
+<header>
+  <h1>BB · ADX · Volume 3축 시안 <small>(샘플 데이터 · 실제 시세 아님)</small></h1>
+  <button class="tab on" data-v="A">A 통합 오버레이</button>
+  <button class="tab" data-v="B">B 3단 패널</button>
+  <button class="tab" data-v="C">C 국면 산점도</button>
+</header>
+
+<section id="A" class="view on">
+  <div class="desc">한 차트에 겹치기: 배경색=ADX 국면, 선=BB, ADX=부호 띠 또는 추세 리본, 하단 막대=거래량, 마커=3축 점수</div>
+  <div class="legend">
+    <span><i class="sw" style="background:rgba(255,180,0,.35)"></i>① 응축 (ADX&lt;20 + 스퀴즈)</span>
+    <span><i class="sw" style="background:rgba(150,150,150,.25)"></i>횡보 (ADX&lt;20)</span>
+    <span><i class="sw" style="background:rgba(38,166,91,.3)"></i>상승 추세 (+DI 우세, 진할수록 ADX≥25)</span>
+    <span><i class="sw" style="background:rgba(220,60,60,.3)"></i>하락 추세 (−DI 우세)</span>
+    <span><i class="sw" style="background:#ffa726"></i>BB 선 주황 = 스퀴즈</span>
+    <span><i class="sw" style="background:rgb(38,200,140)"></i><i class="sw" style="background:rgb(255,82,82)"></i>거래량 양봉/음봉 (진할수록 평균 대비 큼)</span>
+    <span>▲★3 강한 신호 · ▲2 약한 신호 · ▼경고 = 고점 다이버전스 · ■분산 = 고점 대량 매도 · ■매집 = 저점 대량 매수</span>
+    <span><b style='color:#ffd54f'>●1~5파</b> / <b style='color:#ce93d8'>●A~C파</b> = 엘리엇 대응 파동 시작점(자동 추정)</span>
+  </div>
+  <div class="legend">ADX 표시:
+    <button class="tab amode" data-m="strip">부호 ADX 띠 (상승 +, 하락 −)</button>
+    <button class="tab amode" data-m="ribbon">추세 리본 (20일선 색 = ADX)</button>
+    <span>녹=상승 우세 · 적=하락 우세 · 회=ADX&lt;20 · 진할수록 ADX≥25 · 점선 ±20/±25</span>
+  </div>
+  <div class="info" id="infoA">차트 위에 마우스를 올리세요</div>
+  <div id="chartA" style="height:640px"></div>
+</section>
+
+<section id="B" class="view">
+  <div class="desc">3단 패널: 세 패널이 같은 국면 배경과 시간축을 공유 (스크롤·확대 연동)</div>
+  <div class="info" id="infoB">차트 위에 마우스를 올리세요</div>
+  <div class="pt">가격 + BB(20, 2σ)</div><div id="b1" style="height:320px"></div>
+  <div class="pt">ADX(14) 흰색 · +DI 녹색 · −DI 적색 · 기준선 20/25</div><div id="b2" style="height:170px"></div>
+  <div class="pt">Volume + 20일 평균</div><div id="b3" style="height:150px"></div>
+</section>
+
+<section id="C" class="view">
+  <div class="desc">국면 산점도: 가로=BB 밴드폭 백분위(왼쪽=좁음), 세로=부호 ADX(위=상승·아래=하락), 점 크기=거래량 배수 · <span id="cdesc"></span></div>
+  <div class="legend">
+    <span><i class="sw" style="background:#5c6370"></i>점수 0~1</span>
+    <span><i class="sw" style="background:#ffd54f"></i>점수 2</span>
+    <span><i class="sw" style="background:#00e676"></i>점수 3 상승</span>
+    <span><i class="sw" style="background:#ff5252"></i>점수 3 하락</span>
+    <span>◎ = 선택한 날</span>
+  </div>
+  <div class="ctl"><button class="tab cunit" data-u="day">일 단위</button><button class="tab cunit" data-u="week">주 단위</button><button class="tab" id="play">▶ 재생</button><select id="speed" class="tab"><option value="0.5">아주 느리게</option><option value="1" selected>느리게</option><option value="2">보통</option><option value="4">빠르게</option></select><input type="range" id="scrub"><span class="info" id="infoC"></span></div>
+  <canvas id="sc"></canvas>
+  <div class="pt" style="max-width:960px">가격 + BB + 추세 리본(20일선 색 = ADX 국면) · 밝은 세로 띠 = 선택한 날, 옅은 띠 = 궤적 기간 · 차트 클릭 시 해당 날짜로 이동 · <b style='color:#ffd54f'>●1~5파</b>/<b style='color:#ce93d8'>●A~C파</b> = 엘리엇 대응 파동 시작점(자동 추정)</div>
+  <div id="c2" style="height:340px;max-width:960px"></div>
+</section>
+
+<script>
+// ---------- 샘플 데이터 (시드 고정, 국면 시나리오) ----------
+function rng(s){return()=>{s=s+0x6D2B79F5|0;let t=Math.imul(s^s>>>15,1|s);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+const R=rng(42);
+const randn=()=>{let u=0;while(!u)u=R();return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*R())};
+// [일수, 추세, 변동성, 거래량배수]
+const phases=[[60,0,.012,1],[25,0,.005,.7],[45,.006,.016,1.8],[25,-.004,.013,1.1],[20,0,.005,.7],
+              [35,.003,.012,.85],[40,-.006,.018,1.6],[50,0,.01,1]];
+const bars=[];let p=100;const d=new Date(Date.UTC(2025,5,2));
+for(const[n,dr,sg,vm]of phases)for(let i=0;i<n;i++){
+  while(d.getUTCDay()%6===0)d.setUTCDate(d.getUTCDate()+1);
+  const o=p*(1+randn()*sg*.3),c=p*(1+dr+randn()*sg);
+  const h=Math.max(o,c)*(1+Math.abs(randn())*sg*.5),l=Math.min(o,c)*(1-Math.abs(randn())*sg*.5);
+  let v=1e6*vm*(.7+.6*R());if(Math.abs(dr)>=.005&&i<4)v*=2.6;
+  bars.push({time:d.toISOString().slice(0,10),open:o,high:h,low:l,close:c,volume:v});
+  p=c;d.setUTCDate(d.getUTCDate()+1);
+}
+const N=bars.length,C=bars.map(b=>b.close);
+
+// ---------- 지표 ----------
+const mid=[],up=[],lo=[],bw=[],sq=[];
+for(let i=19;i<N;i++){const s=C.slice(i-19,i+1),m=s.reduce((a,b)=>a+b)/20,sd=Math.sqrt(s.reduce((a,b)=>a+(b-m)**2,0)/20);
+  mid[i]=m;up[i]=m+2*sd;lo[i]=m-2*sd;bw[i]=4*sd/m;}
+for(let i=19;i<N;i++){let mn=Infinity;for(let j=Math.max(19,i-100);j<=i;j++)mn=Math.min(mn,bw[j]);sq[i]=bw[i]<=mn*1.25;}
+const pdi=[],mdi=[],adx=[];let tr14=0,p14=0,m14=0,dxs=[],av=null;
+for(let i=1;i<N;i++){const b=bars[i],q=bars[i-1];
+  const tr=Math.max(b.high-b.low,Math.abs(b.high-q.close),Math.abs(b.low-q.close));
+  const um=b.high-q.high,dm=q.low-b.low,pdm=um>dm&&um>0?um:0,mdm=dm>um&&dm>0?dm:0;
+  if(i<=14){tr14+=tr;p14+=pdm;m14+=mdm}else{tr14+=tr-tr14/14;p14+=pdm-p14/14;m14+=mdm-m14/14}
+  if(i>=14){const P=100*p14/tr14,M=100*m14/tr14;pdi[i]=P;mdi[i]=M;const dx=P+M?100*Math.abs(P-M)/(P+M):0;
+    if(av===null){dxs.push(dx);if(dxs.length===14)av=dxs.reduce((a,b)=>a+b)/14}else av=(av*13+dx)/14;
+    if(av!==null)adx[i]=av;}}
+const vma=[],vr=[];
+for(let i=19;i<N;i++){let s=0;for(let j=i-19;j<=i;j++)s+=bars[j].volume;vma[i]=s/20;vr[i]=bars[i].volume/vma[i];}
+// 3축 점수
+const score=[],brk=[],dir=[];
+for(let i=0;i<N;i++){if(adx[i]==null||up[i]==null){score[i]=null;continue}
+  brk[i]=C[i]>up[i]?1:C[i]<lo[i]?-1:0;dir[i]=pdi[i]>mdi[i]?1:-1;
+  const adxUp=adx[i]>=20&&adx[i]>(adx[i-3]??adx[i]);
+  const volUp=Math.max(vr[i],vr[i-1]??0,vr[i-2]??0)>=1.5; // 최근 3일 내 거래량 급증
+  score[i]=(brk[i]?1:0)+(adxUp?1:0)+(volUp?1:0);}
+const regimeName=i=>adx[i]==null?'-':adx[i]<20?(sq[i]?'① 응축':'횡보'):(adx[i]<25?'추세 시작':'강한 추세')+(dir[i]>0?' ↑':' ↓');
+const bgColor=i=>{const a=adx[i];if(a==null)return'rgba(0,0,0,0)';
+  if(a<20)return sq[i]?'rgba(255,180,0,0.13)':'rgba(150,150,150,0.06)';
+  const k=a>=25?.22:.10;return pdi[i]>mdi[i]?`rgba(38,166,91,${k})`:`rgba(220,60,60,${k})`;};
+// 마커: 돌파 신호(점수 2~3) + 고점 다이버전스 경고
+const markers=[];let lastSig=-9,lastWarn=-99;
+for(let i=0;i<N;i++){
+  if(score[i]>=2&&brk[i]&&i-lastSig>3){const u=brk[i]>0,s3=score[i]===3;lastSig=i;
+    markers.push({time:bars[i].time,position:u?'belowBar':'aboveBar',shape:u?'arrowUp':'arrowDown',
+      color:u?(s3?'#00e676':'#a5d6a7'):(s3?'#ff5252':'#ef9a9a'),text:s3?'★3':'2'});}
+  // 직전 가격 고점(6~40일 전) 대비: 가격은 더 높고, ADX는 더 낮고, 거래량은 평균 이하
+  if(i>45&&adx[i]!=null){let pj=i-40;for(let j=i-40;j<i-5;j++)if(C[j]>C[pj])pj=j;
+    let recentMax=-Infinity;for(let j=pj;j<i;j++)recentMax=Math.max(recentMax,C[j]);
+    if(C[i]>recentMax&&adx[pj]>=25&&adx[i]<adx[pj]-3&&vr[i]<1&&i-lastWarn>10){lastWarn=i;
+      markers.push({time:bars[i].time,position:'aboveBar',shape:'arrowDown',color:'#ffb300',text:'경고'});}}}
+// 분산: 상승 후(40일 전 대비 +3%↑) 40일 고점 5% 이내에서 평균 2배+ 거래량 음봉
+// 매집: 하락 후(40일 전 대비 -10%↓) 40일 저점 5% 이내에서 2배+ 양봉
+let lastDist=-99,lastAcc=-99;
+for(let i=40;i<N;i++){if(vr[i]==null||vr[i]<2)continue;const b=bars[i];
+  let hi=-Infinity,lw=Infinity;for(let j=i-40;j<=i;j++){hi=Math.max(hi,bars[j].high);lw=Math.min(lw,bars[j].low)}
+  if(b.close<b.open&&b.high>=hi*.95&&C[i-40]<C[i]*.97&&i-lastDist>10){lastDist=i;
+    markers.push({time:b.time,position:'aboveBar',shape:'square',color:'#ff7043',text:'분산'});}
+  if(b.close>=b.open&&b.low<=lw*1.05&&C[i-40]>C[i]*1.1&&i-lastAcc>10){lastAcc=i;
+    markers.push({time:b.time,position:'belowBar',shape:'square',color:'#4dd0e1',text:'매집'});}}
+markers.sort((a,b)=>a.time<b.time?-1:1);
+
+const fmt=i=>`${bars[i].time}  종가 ${C[i].toFixed(2)}  BB폭 ${bw[i]!=null?(bw[i]*100).toFixed(1)+'%':'-'}${sq[i]?'(스퀴즈)':''}  ADX ${adx[i]?.toFixed(1)??'-'} (+DI ${pdi[i]?.toFixed(1)??'-'} / −DI ${mdi[i]?.toFixed(1)??'-'})  거래량 ${vr[i]?.toFixed(2)??'-'}배  점수 ${score[i]??'-'}  [${regimeName(i)}]`;
+
+// ---------- 공통 차트 헬퍼 ----------
+const LW=LightweightCharts;
+const base={autoSize:true,layout:{background:{color:'#0f1115'},textColor:'#9aa1ad'},
+  grid:{vertLines:{color:'#181b22'},horzLines:{color:'#181b22'}},
+  rightPriceScale:{borderColor:'#2a2e38',minimumWidth:70},timeScale:{borderColor:'#2a2e38'},crosshair:{mode:0}};
+const mk=(id,extra={})=>LW.createChart(document.getElementById(id),{...base,...extra});
+function addBg(ch){const s=ch.addHistogramSeries({priceScaleId:'bg',priceLineVisible:false,lastValueVisible:false});
+  ch.priceScale('bg').applyOptions({scaleMargins:{top:0,bottom:0},visible:false});
+  s.setData(bars.map((b,i)=>({time:b.time,value:1,color:bgColor(i)})));}
+function line(ch,arr,color,w=1,sqc){const s=ch.addLineSeries({color,lineWidth:w,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
+  s.setData(arr.map((v,i)=>v==null?null:{time:bars[i].time,value:v,...(sqc&&sq[i]?{color:sqc}:{})}).filter(Boolean));return s;}
+function candles(ch){const s=ch.addCandlestickSeries({upColor:'#26a69a',downColor:'#ef5350',borderVisible:false,wickUpColor:'#26a69a',wickDownColor:'#ef5350'});
+  s.setData(bars.map(({time,open,high,low,close})=>({time,open,high,low,close})));return s;}
+function bbLines(ch){line(ch,up,'#5b8def',1,'#ffa726');line(ch,lo,'#5b8def',1,'#ffa726');line(ch,mid,'rgba(160,160,160,.5)',1);}
+const volColor=i=>{const u=bars[i].close>=bars[i].open,a=vr[i]>=2?1:vr[i]>=1.5?.65:.28;
+  return u?`rgba(38,200,140,${a})`:`rgba(255,82,82,${a})`;};
+function hover(ch,el){ch.subscribeCrosshairMove(p=>{const i=p.logical;if(i!=null&&i>=0&&i<N)el.textContent=fmt(Math.round(i))});}
+
+// ---------- A: 통합 오버레이 ----------
+var csA;{const ch=mk('chartA');addBg(ch);bbLines(ch);csA=candles(ch);
+ ch.priceScale('right').applyOptions({scaleMargins:{top:.03,bottom:.38}});
+ // (1) 부호 ADX 띠: +DI 우세면 위(+), −DI 우세면 아래(−) → 캔들 방향과 같이 움직임
+ // DI 차이가 10 이상이면 ±ADX 그대로, 작으면 0 쪽으로 비례 축소 (교차 시 수직 점프 방지)
+ const sadx=adx.map((v,i)=>v==null?null:v*Math.max(-1,Math.min(1,(pdi[i]-mdi[i])/10)));
+ const adxMax=Math.max(60,Math.ceil(Math.max(...adx.filter(v=>v!=null))/10)*10);
+ const sCol=i=>{const a=adx[i],u=pdi[i]>mdi[i];return a<20?'#9aa1ad':u?(a>=25?'#00e676':'#7fdca8'):(a>=25?'#ff5252':'#f09a9a');};
+ const sL=ch.addLineSeries({priceScaleId:'adx',lineWidth:2,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false,
+   autoscaleInfoProvider:()=>({priceRange:{minValue:-adxMax,maxValue:adxMax}})});
+ sL.setData(sadx.map((v,i)=>v==null?null:{time:bars[i].time,value:v,color:sCol(i)}).filter(Boolean));
+ sL.createPriceLine({price:0,color:'#555',lineStyle:0,lineWidth:1,axisLabelVisible:false});
+ for(const y of[20,25,-20,-25])sL.createPriceLine({price:y,color:Math.abs(y)===25?'#888':'#555',lineStyle:2,lineWidth:1,axisLabelVisible:false});
+ // (2) 추세 리본: 20일선 위에 굵은 선, 색 = ADX 국면 (가격 위에 직접 겹침)
+ const rCol=i=>{const a=adx[i];if(a==null)return'rgba(0,0,0,0)';const u=pdi[i]>mdi[i];
+   return a<20?'rgba(160,160,160,.55)':u?(a>=25?'rgba(0,230,118,.95)':'rgba(0,230,118,.5)'):(a>=25?'rgba(255,82,82,.95)':'rgba(255,82,82,.5)');};
+ const rib=ch.addLineSeries({lineWidth:5,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false,visible:false});
+ rib.setData(mid.map((v,i)=>v==null?null:{time:bars[i].time,value:v,color:rCol(i)}).filter(Boolean));
+ const setMode=m=>{const strip=m==='strip';sL.applyOptions({visible:strip});rib.applyOptions({visible:!strip});
+   ch.priceScale('right').applyOptions({scaleMargins:{top:.03,bottom:strip?.38:.2}});
+   ch.priceScale('adx').applyOptions({scaleMargins:{top:.63,bottom:.18},visible:false});
+   document.querySelectorAll('.amode').forEach(b=>b.classList.toggle('on',b.dataset.m===m));};
+ document.querySelectorAll('.amode').forEach(b=>b.onclick=()=>setMode(b.dataset.m));setMode('strip');
+ const v=ch.addHistogramSeries({priceScaleId:'vol',priceLineVisible:false,lastValueVisible:false,priceFormat:{type:'volume'}});
+ ch.priceScale('vol').applyOptions({scaleMargins:{top:.84,bottom:0},visible:false});
+ v.setData(bars.map((b,i)=>({time:b.time,value:b.volume,color:volColor(i)})));
+ hover(ch,document.getElementById('infoA'));}
+
+// ---------- B: 3단 패널 ----------
+{const c1=mk('b1',{timeScale:{visible:false}}),c2=mk('b2',{timeScale:{visible:false}}),c3=mk('b3');
+ const infoB=document.getElementById('infoB');
+ [c1,c2,c3].forEach(c=>{addBg(c);hover(c,infoB)});
+ bbLines(c1);candles(c1).setMarkers(markers);
+ const a=line(c2,adx,'#ffffff',2);line(c2,pdi,'#26a65b',1);line(c2,mdi,'#dc3c3c',1);
+ a.createPriceLine({price:20,color:'#777',lineStyle:2,lineWidth:1,axisLabelVisible:true});
+ a.createPriceLine({price:25,color:'#aaa',lineStyle:2,lineWidth:1,axisLabelVisible:true});
+ const v=c3.addHistogramSeries({priceLineVisible:false,lastValueVisible:false,priceFormat:{type:'volume'}});
+ v.setData(bars.map((b,i)=>({time:b.time,value:b.volume,color:volColor(i)})));
+ line(c3,vma,'#ffa726',1);
+ let lock=false;const all=[c1,c2,c3];
+ all.forEach(c=>c.timeScale().subscribeVisibleLogicalRangeChange(r=>{if(lock||!r)return;lock=true;all.forEach(o=>o!==c&&o.timeScale().setVisibleLogicalRange(r));lock=false}));}
+
+// ---------- C: 국면 산점도 ----------
+const valid=[...Array(N).keys()].filter(i=>adx[i]!=null&&bw[i]!=null&&vr[i]!=null);
+const sorted=valid.map(i=>bw[i]).sort((a,b)=>a-b);
+const pct=[];valid.forEach(i=>{let k=0;while(k<sorted.length&&sorted[k]<bw[i])k++;pct[i]=k/sorted.length*100});
+const colorOf=(sc,dr)=>sc>=3?(dr>0?'#00e676':'#ff5252'):sc===2?'#ffd54f':'#5c6370';
+// 일 단위: 하루 = 점 하나
+const sgn=i=>adx[i]*Math.max(-1,Math.min(1,(pdi[i]-mdi[i])/10));
+const daySeq=valid.map(i=>({i,x:pct[i],y:sgn(i),v:vr[i],sc:score[i],dr:dir[i],lab:bars[i].time.slice(5)}));
+// 주 단위: 한 주 = 점 하나 (그 주 마지막 거래일 지표, 주간 평균 거래량 배수, 주중 최고 점수)
+const weekKey=t=>{const d=new Date(t+'T00:00:00Z');d.setUTCDate(d.getUTCDate()-((d.getUTCDay()+6)%7));return d.toISOString().slice(0,10)};
+const weekSeq=[];{let g=[];valid.forEach((i,n)=>{g.push(i);const nx=valid[n+1];
+  if(nx==null||weekKey(bars[nx].time)!==weekKey(bars[i].time)){const L=g[g.length-1];
+    let best=g[0];for(const j of g)if(score[j]>score[best])best=j;
+    weekSeq.push({i:L,x:pct[L],y:sgn(L),v:g.reduce((s,j)=>s+vr[j],0)/g.length,sc:score[best],dr:dir[best],
+      lab:weekKey(bars[L].time).slice(5)+'주',days:g});g=[];}});}
+let unit='day',seq=daySeq;
+const TRAIL={day:40,week:12},SPEED={day:200,week:1200}; // 기본 재생 간격(ms), 속도 선택으로 배율 조정
+const cv=document.getElementById('sc'),ctx=cv.getContext('2d'),scrub=document.getElementById('scrub');
+function setUnit(u){const cur=seq[+scrub.value]?.i;unit=u;seq=u==='day'?daySeq:weekSeq;
+  scrub.max=seq.length-1;let k=seq.findIndex(p=>p.i>=cur);scrub.value=k<0?seq.length-1:k;
+  document.querySelectorAll('.cunit').forEach(b=>b.classList.toggle('on',b.dataset.u===u));
+  document.getElementById('cdesc').textContent=u==='day'?'최근 40일 궤적 · 점 1개 = 1일':'최근 12주 궤적 · 점 1개 = 1주 (주 마지막 거래일 기준, 크기=주간 평균 거래량 배수, 색=주중 최고 점수)';
+  drawC();}
+function drawC(){const k=+scrub.value,P=seq[k];if(!P)return;
+  const W=cv.clientWidth,H=cv.clientHeight,dpr=devicePixelRatio||1;if(!W)return;
+  cv.width=W*dpr;cv.height=H*dpr;ctx.setTransform(dpr,0,0,dpr,0,0);
+  const m={l:54,r:16,t:16,b:40},X=v=>m.l+v/100*(W-m.l-m.r),YM=Math.max(60,Math.ceil(Math.max(...valid.map(i=>adx[i]))/10)*10),Y=v=>H-m.b-(Math.max(-YM,Math.min(v,YM))+YM)/(2*YM)*(H-m.t-m.b);
+  ctx.fillStyle='#0f1115';ctx.fillRect(0,0,W,H);
+  // 위 = 상승(+DI 우세), 아래 = 하락(−DI 우세), 가운데 ±20 = 추세 없음
+  const q=[[30,25,100,YM,'rgba(38,166,91,.10)','② 상승 추세'],[0,25,30,YM,'rgba(38,166,91,.05)','③ 상승 쉼'],
+           [0,-20,30,20,'rgba(255,180,0,.08)','① 응축'],[30,-20,100,20,'rgba(150,150,150,.06)','④ 방향 없는 급변동'],
+           [0,-YM,30,-25,'rgba(220,60,60,.05)','③ 하락 쉼'],[30,-YM,100,-25,'rgba(220,60,60,.10)','② 하락 추세']];
+  ctx.font='13px -apple-system,sans-serif';
+  for(const[x0,y0,x1,y1,c,t]of q){ctx.fillStyle=c;ctx.fillRect(X(x0),Y(y1),X(x1)-X(x0),Y(y0)-Y(y1));
+    ctx.fillStyle='#7d8590';ctx.fillText(t,X(x0)+8,y0<0&&y1<0?Y(y0)-8:Y(y1)+18);}
+  ctx.strokeStyle='#2a2e38';ctx.setLineDash([4,4]);
+  for(const y of[20,25,-20,-25]){ctx.beginPath();ctx.moveTo(X(0),Y(y));ctx.lineTo(X(100),Y(y));ctx.stroke()}
+  ctx.beginPath();ctx.moveTo(X(30),Y(-YM));ctx.lineTo(X(30),Y(YM));ctx.stroke();ctx.setLineDash([]);
+  ctx.strokeStyle='#3a3f4b';ctx.beginPath();ctx.moveTo(X(0),Y(0));ctx.lineTo(X(100),Y(0));ctx.stroke();
+  ctx.fillStyle='#7d8590';ctx.font='11px -apple-system,sans-serif';
+  for(let v=0;v<=100;v+=20)ctx.fillText(v,X(v)-6,H-m.b+16);
+  for(let v=-YM;v<=YM;v+=20)ctx.fillText((v>0?'+':'')+v,m.l-30,Y(v)+4);
+  ctx.fillText('BB 밴드폭 백분위 →',X(50)-50,H-6);ctx.save();ctx.translate(12,Y(0));ctx.rotate(-Math.PI/2);ctx.fillText('하락 ← 부호 ADX → 상승',-60,0);ctx.restore();
+  const wk=unit==='week',rs=wk?4:3;
+  // 전체 이력 (흐리게)
+  for(const p of seq.slice(0,k+1)){ctx.globalAlpha=.12;ctx.fillStyle=colorOf(p.sc,p.dr);ctx.beginPath();ctx.arc(X(p.x),Y(p.y),2+p.v*2,0,7);ctx.fill()}
+  // 최근 궤적 (주 단위는 화살표로 방향 표시)
+  const tr=seq.slice(Math.max(0,k-TRAIL[unit]+1),k+1);
+  for(let j=1;j<tr.length;j++){const a=tr[j-1],b=tr[j],x0=X(a.x),y0=Y(a.y),x1=X(b.x),y1=Y(b.y);
+    ctx.globalAlpha=.2+.8*j/tr.length;ctx.strokeStyle='#cfd3dc';ctx.lineWidth=wk?2:1.2;
+    ctx.beginPath();ctx.moveTo(x0,y0);ctx.lineTo(x1,y1);ctx.stroke();
+    if(wk&&Math.hypot(x1-x0,y1-y0)>18){const an=Math.atan2(y1-y0,x1-x0),mx=(x0+x1)/2,my=(y0+y1)/2;ctx.fillStyle='#cfd3dc';
+      ctx.beginPath();ctx.moveTo(mx+7*Math.cos(an),my+7*Math.sin(an));ctx.lineTo(mx-5*Math.cos(an-.6),my-5*Math.sin(an-.6));
+      ctx.lineTo(mx-5*Math.cos(an+.6),my-5*Math.sin(an+.6));ctx.fill();}}
+  tr.forEach((p,j)=>{ctx.globalAlpha=.3+.7*j/tr.length;ctx.fillStyle=colorOf(p.sc,p.dr);ctx.beginPath();ctx.arc(X(p.x),Y(p.y),2.5+p.v*rs,0,7);ctx.fill();
+    if(wk){ctx.globalAlpha=.4+.6*j/tr.length;ctx.fillStyle='#aab1bd';ctx.font='10px -apple-system,sans-serif';ctx.fillText(p.lab,X(p.x)+8,Y(p.y)-8);}});
+  ctx.globalAlpha=1;ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.beginPath();ctx.arc(X(P.x),Y(P.y),8+P.v*rs,0,7);ctx.stroke();
+  document.getElementById('infoC').textContent=(wk?`[${P.lab}] 주간 거래량 ${P.v.toFixed(2)}배 · 주중 최고점수 ${P.sc} │ `:'')+fmt(P.i);syncC2(P,tr);}
+scrub.oninput=drawC;window.addEventListener('resize',drawC);
+document.querySelectorAll('.cunit').forEach(b=>b.onclick=()=>setUnit(b.dataset.u));
+let timer=null;const playBtn=document.getElementById('play');
+const stop=()=>{clearTimeout(timer);timer=null;playBtn.textContent='▶ 재생'};
+playBtn.onclick=()=>{if(timer)return stop();
+  if(+scrub.value>=seq.length-1)scrub.value=0;playBtn.textContent='⏸ 정지';
+  const tick=()=>{if(+scrub.value>=seq.length-1)return stop();scrub.value=+scrub.value+1;drawC();
+    timer=setTimeout(tick,SPEED[unit]/+document.getElementById('speed').value)};timer=setTimeout(tick,0);};
+scrub.min=0;scrub.max=seq.length-1;scrub.value=seq.length-1;setUnit('day');
+
+
+
+// ---------- 엘리엇 대응 파동 시작점 (지표 앵커 + 지그재그 피벗) ----------
+// 표기 관례: 보통 엘리엇 라벨은 파동 '끝점'에 붙이지만, 여기서는 요청대로 '시작점'에 붙임
+function zigzag(th){const P=[];let dn=0,ei=0;
+  for(let i=1;i<N;i++){const h=bars[i].high,l=bars[i].low;
+    if(dn>=0){if(h>=bars[ei].high){if(!dn)dn=1;ei=i}else if(l<=bars[ei].high*(1-th)){P.push({i:ei,t:'H'});dn=-1;ei=i}}
+    else{if(l<=bars[ei].low)ei=i;else if(h>=bars[ei].low*(1+th)){P.push({i:ei,t:'L'});dn=1;ei=i}}}
+  return P;} // 진행 중(미확정) 마지막 피벗은 제외
+const Z3=zigzag(.03),Z4=zigzag(.04),Z5=zigzag(.05);
+const sgnA=i=>adx[i]==null?0:adx[i]*Math.max(-1,Math.min(1,(pdi[i]-mdi[i])/10));
+const waveLab=[];
+{let last=-99;
+ for(let s=30;s<N;s++){if(score[s]==null||score[s]<2||!brk[s])continue;
+  let calm=false;for(let j=s-15;j<s;j++)if(Math.abs(sgnA(j))<20)calm=true;   // 응축/무추세 이후의 돌파만 앵커
+  if(!calm||s-last<30)continue;last=s;const pts=[];
+  if(brk[s]>0){ // 상승 앵커: 3파 시작 = 직전 15일 최저점, 1·2파 = 그 앞 3% 피벗, 4·5·A·B·C = 이후 5% 피벗
+    let i3=s;for(let j=s-15;j<=s;j++)if(bars[j].low<bars[i3].low)i3=j;
+    const h2=[...Z3].reverse().find(p=>p.t==='H'&&p.i<i3),l1=h2&&[...Z3].reverse().find(p=>p.t==='L'&&p.i<h2.i);
+    if(h2&&l1&&bars[l1.i].low<bars[i3].low&&i3-l1.i<=60)pts.push([l1.i,'1파'],[h2.i,'2파']);
+    pts.push([i3,'3파']);const fw=Z5.filter(p=>p.i>i3);if(fw[0]&&fw[0].t!=='H')fw.shift();
+    ['4파','5파','A파','B파','C파'].forEach((L,n)=>{if(fw[n])pts.push([fw[n].i,L])});
+  }else{ // 하락 앵커: C파 시작 = 마지막 4% 고점 피벗, A·B = 그 앞 피벗
+    const k=Z4.map(p=>p.t==='H'&&p.i<=s).lastIndexOf(true);if(k<0)continue;
+    if(Z4[k-2]&&bars[Z4[k-2].i].high>bars[Z4[k].i].high)pts.push([Z4[k-2].i,'A파'],[Z4[k-1].i,'B파']);
+    pts.push([Z4[k].i,'C파']);}
+  const first=Math.min(...pts.map(p=>p[0]));
+  for(let n=waveLab.length-1;n>=0;n--)if(waveLab[n][0]>=first)waveLab.splice(n,1); // 뒤 앵커가 우선
+  waveLab.push(...pts);}}
+// 2·4·A·C파는 고점에서 시작(위), 1·3·5·B파는 저점에서 시작(아래) — 하락 앵커의 A·B·C도 같은 배치
+const waveMarkers=waveLab.map(([i,L])=>{const top=/^(2|4|A|C)/.test(L);
+  return{time:bars[i].time,position:top?'aboveBar':'belowBar',shape:'circle',color:/^[A-C]/.test(L)?'#ce93d8':'#ffd54f',text:L};});
+const allMarkers=[...markers,...waveMarkers].sort((a,b)=>a.time<b.time?-1:1);
+csA.setMarkers(allMarkers); // A 통합 오버레이에도 같은 마커(신호 + 엘리엇 대응) 적용
+
+// ---------- C 하단: 추세 리본 차트 (산점도와 연동) ----------
+var c2=null,c2hl=null;
+function syncC2(P,tr){if(!c2)return;
+  const from=tr[0].i,to=P.i,cur=new Set(unit==='week'?P.days:[P.i]);
+  c2hl.setData(bars.map((b,i)=>({time:b.time,value:1,color:cur.has(i)?'rgba(255,255,255,.35)':(i>=from&&i<=to?'rgba(120,170,255,.16)':'rgba(0,0,0,0)')})));
+  // 보이는 범위 = 궤적 시작 20일 전 ~ 선택한 날 10일 후 (궤적과 함께 이동)
+  c2.timeScale().setVisibleLogicalRange({from:from-20,to:P.i+10});}
+{c2=mk('c2');addBg(c2);
+ c2hl=c2.addHistogramSeries({priceScaleId:'hl',priceLineVisible:false,lastValueVisible:false});
+ c2.priceScale('hl').applyOptions({scaleMargins:{top:0,bottom:0},visible:false});
+ bbLines(c2);candles(c2).setMarkers(allMarkers);
+ const rc=i=>{const a=adx[i];if(a==null)return'rgba(0,0,0,0)';const u=pdi[i]>mdi[i];
+   return a<20?'rgba(160,160,160,.55)':u?(a>=25?'rgba(0,230,118,.95)':'rgba(0,230,118,.5)'):(a>=25?'rgba(255,82,82,.95)':'rgba(255,82,82,.5)');};
+ const rib=c2.addLineSeries({lineWidth:5,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
+ rib.setData(mid.map((v,i)=>v==null?null:{time:bars[i].time,value:v,color:rc(i)}).filter(Boolean));
+ c2.priceScale('right').applyOptions({scaleMargins:{top:.05,bottom:.22}});
+ const v=c2.addHistogramSeries({priceScaleId:'vol',priceLineVisible:false,lastValueVisible:false,priceFormat:{type:'volume'}});
+ c2.priceScale('vol').applyOptions({scaleMargins:{top:.82,bottom:0},visible:false});
+ v.setData(bars.map((b,i)=>({time:b.time,value:b.volume,color:volColor(i)})));
+ c2.subscribeClick(p=>{if(p.logical==null)return;const i=Math.round(p.logical);
+   let k=seq.findIndex(q=>(unit==='week'?q.days.includes(i):q.i===i)||q.i>i);if(k<0)k=seq.length-1;
+   if(timer)stop();scrub.value=k;drawC();});
+ // 탭 전환 등으로 크기가 바뀌면 보이는 범위를 다시 맞춤
+ new ResizeObserver(()=>drawC()).observe(document.getElementById('c2'));
+ drawC();}
+
+// ---------- 탭 ----------
+document.querySelectorAll('header .tab').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('header .tab').forEach(x=>x.classList.toggle('on',x===b));
+  document.querySelectorAll('.view').forEach(v=>v.classList.toggle('on',v.id===b.dataset.v));
+  if(b.dataset.v==='C')requestAnimationFrame(drawC);});
+</script>
+</body>
+</html>
