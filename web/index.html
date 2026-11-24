@@ -318,8 +318,10 @@ function drawSecTable(mk){const t=document.getElementById('h'+mk);const rows=sec
 function drawHome(){if(!U.length)return;const ix=U.filter(it=>it.id.startsWith('IX:'));
   const cnt=k=>ix.filter(it=>stOf(it)[1]===k).length;
   document.getElementById('hsum').innerHTML=`기준 ${new Date(UPD).toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})} 갱신 · 주요 지표 ${ix.length}개 중 강세 ${cnt('강세')} · 약세 ${cnt('약세')} · 횡보 ${cnt('횡보')} · <a class="lk" onclick="showTab('V')">일일 검증 보기</a>`;
-  document.getElementById('hidx').innerHTML=['한국','미국','일본','중국','글로벌'].map(g=>`<div class="grp">${g}</div><div class="cards">${
-    ix.filter(it=>it.g===g).map(it=>`<div class="card" onclick="go('${it.id}')"><div class="nm"><span>${it.n}${INV.has(it.id)?' <small class="muted">↑=위험회피</small>':''}</span>${stBadge(it)}</div>
+  const GIX=new Set(['IX:ACWI','IX:SX5E','IX:DAX']);  // 글로벌 중 대표 주가지수 → 맨 위
+  const HG=[['글로벌',it=>GIX.has(it.id)],['한국'],['미국'],['일본'],['중국'],['글로벌 매크로',it=>it.g==='글로벌'&&!GIX.has(it.id)]];
+  document.getElementById('hidx').innerHTML=HG.map(([g,f])=>`<div class="grp">${g}</div><div class="cards">${
+    ix.filter(f||(it=>it.g===g)).map(it=>`<div class="card" onclick="go('${it.id}')"><div class="nm"><span>${it.n}${INV.has(it.id)?' <small class="muted">↑=위험회피</small>':''}</span>${stBadge(it)}</div>
       <div class="vl">${fmtP(it.c)} <small>${pc(it.ch)}</small></div>${spark(it.sp)}<div class="ft"><span>20일 ${pc(it.r20)}</span><span>부호ADX ${it.sa}</span>${it.dd&&it.sp&&!INV.has(it.id)?`<span class="${it.dd>=3?'wk':'muted'}" title="최근 4주 분산일(3~5회 = 현금 확보 신호)">분산일 ${it.dd}</span>`:''}</div></div>`).join('')}</div>`).join('');
   drawSecTable('KR');drawSecTable('US');}
 
