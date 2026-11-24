@@ -108,39 +108,53 @@ def compute(bars):
         if b['close'] >= b['open'] and b['low'] <= lw * 1.05 and C[i - 40] > C[i] * 1.1 and i - last_acc > 10:
             last_acc = i; sigs.append((i, '매집'))
 
-    # ---- 조짐 표시: 분산일(오닐) · 처닝 · 과열 · 공매도 급증 ----
-    # 분산일 = 종가 0.2%↑ 하락 + 거래량이 전일보다 많음. 최근 25거래일 안, 그날 종가보다 5%↑ 오르면 소멸
+    # ---- 조짐 표시 (오닐 『공매도 투자 기법』: 처닝 → 분산일 → 대규모 분산) ----
     V = [b['volume'] for b in bars]
+    vma = [None] * N
+    for i in range(19, N):
+        vma[i] = sum(V[i - 19:i + 1]) / 20
+    # 분산일 = 종가가 전일보다 0.2%↑ 낮고 거래량이 전일보다 많은 날. 최근 20거래일(4주) 안, 그날 종가보다 5%↑ 오르면 소멸
     dday = [False] * N
     for i in range(1, N):
         dday[i] = V[i] > 0 and V[i - 1] > 0 and C[i] <= C[i - 1] * .998 and V[i] > V[i - 1]
     ddn = [0] * N
     for i in range(N):
         n, hi = 0, -1e300
-        for j in range(i, max(-1, i - 25), -1):
+        for j in range(i, max(-1, i - 20), -1):
             if dday[j] and hi < C[j] * 1.05:
                 n += 1
             hi = max(hi, C[j])
         ddn[i] = n
-    # 처닝(churning) = 상승 후 고점권(40일 고가 5% 이내, 40일 전보다 +3%↑)에서 거래량 평균 1.5배↑·전일 초과인데
-    # 가격 진전 없음(전일 대비 ±0.5% 이내) + 장중 범위 아래쪽 절반 마감 → 대량 매물 소화(위장된 분산)
-    churn = [False] * N
+    # 처닝(과도 거래) = 상승 추세 고점권(40일 전보다 +3%↑, 직전 40일 고가의 97%↑)에서 1~3일 연속 거래량 증가(마지막 날 평균 이상)
+    #   인데 그 기간 가격 변화가 −1%~+0.5%(상승 미미·제자리)
+    hi40 = [None] * N
     for i in range(40, N):
-        b = bars[i]
-        rng = b['high'] - b['low']
-        if (vr[i] or 0) >= 1.5 and V[i] > V[i - 1] and abs(C[i] / C[i - 1] - 1) <= .005 and rng > 0 \
-                and (C[i] - b['low']) / rng < .5 and C[i - 40] < C[i] * .97 \
-                and b['high'] >= max(x['high'] for x in bars[i - 40:i + 1]) * .95:
-            churn[i] = True
+        hi40[i] = max(x['high'] for x in bars[i - 40:i])
+    churn = [False] * N
+    for i in range(41, N):
+        if not (vma[i] and V[i] >= vma[i] and C[i - 40] < C[i] * .97 and bars[i]['high'] >= hi40[i] * .97):
+            continue
+        for k in (1, 2, 3):
+            if all(V[j] > V[j - 1] for j in range(i - k + 1, i + 1)) and -.01 <= C[i] / C[i - k] - 1 <= .005:
+                churn[i] = True
+                break
+    # 대규모 분산(B점) = 처닝 뒤 10일 안에 장중 신고가(직전 40일 고가 경신)인데 전일보다 낮은 종가 + 거래량 전일 초과·평균 1.2배↑
+    bigd = [False] * N
+    for i in range(41, N):
+        if vma[i] and bars[i]['high'] > hi40[i] and C[i] < C[i - 1] and V[i] > V[i - 1] and V[i] >= vma[i] * 1.2 \
+                and any(churn[j] for j in range(max(0, i - 10), i)):
+            bigd[i] = True
     sr = [b.get('sr') for b in bars]   # 공매도 비중(%) — 있는 종목만
-    last_dd = last_hot = last_sr = last_ch = -99
+    last_dd = last_hot = last_sr = last_ch = last_bd = -99
     for i in range(20, N):
         if ddn[i] >= 5 and ddn[i - 1] < 5 and i - last_dd > 10:
-            last_dd = i; sigs.append((i, '분산일5'))          # 분산일 25일 내 5회 → 고점 경계(오닐)
+            last_dd = i; sigs.append((i, '분산일5'))          # 4주 안 분산일 5회 → 보유 재평가·현금 확보(오닐)
         if (vr[i] or 0) >= 3 and up[i] is not None and C[i] > up[i] and C[i] >= C[i - 20] * 1.2 and i - last_hot > 10:
             last_hot = i; sigs.append((i, '과열'))            # 급등(20일 +20%↑) 뒤 평균 3배↑ 거래 + BB 상단 밖 = 매수 클라이맥스
         if churn[i] and i - last_ch > 10:
             last_ch = i; sigs.append((i, '처닝'))
+        if bigd[i] and i - last_bd > 10:
+            last_bd = i; sigs.append((i, '대분산'))
         if sr[i] is not None and sr[i] >= 55 and i - last_sr > 5:
             prev = [x for x in sr[i - 40:i] if x is not None]
             if len(prev) >= 20:
@@ -152,7 +166,7 @@ def compute(bars):
 
     waves = elliott(bars, score, brk, sgn, N)
     return dict(mid=mid, up=up, lo=lo, bw=bw, sq=sq, pdi=pdi, mdi=mdi, adx=adx, vr=vr,
-                score=score, brk=brk, dir=dr, sgn=sgn, sigs=sigs, waves=waves, dday=dday, ddn=ddn, churn=churn)
+                score=score, brk=brk, dir=dr, sgn=sgn, sigs=sigs, waves=waves, dday=dday, ddn=ddn, churn=churn, bigd=bigd)
 
 
 def zigzag(bars, th):
@@ -416,7 +430,7 @@ def summary(bars, mkt='KR'):
 
 
 BULL = {'★3↑', '2↑', '매집', '투매'}
-BEAR = {'경고', '분산', '꺾임', '분산일5', '과열', '공매↑', '처닝'}
+BEAR = {'경고', '분산', '꺾임', '분산일5', '과열', '공매↑', '처닝', '대분산'}
 
 
 def forward_stats(bars, r, recent_days=63):

@@ -110,7 +110,7 @@ tr.det>td{background:#12161d;white-space:normal;text-align:left;cursor:default}
     <span><i class="sw" style="background:rgb(38,200,140)"></i><i class="sw" style="background:rgb(255,82,82)"></i>거래량 양봉/음봉 (진할수록 평균 대비 큼)</span>
     <span>▲★3/▲2 상승 돌파 · ▲투매 = 하단 이탈+거래량(역발상 매수) · ▼꺾임 = 과열 추세 꺾임 · ▼경고 = 고점 다이버전스 · ■분산 = 고점 대량 매도 · ■매집 = 저점 대량 매수</span>
     <span><b style='color:#ffd54f'>●1~5파</b> / <b style='color:#ce93d8'>●A~C파</b> / <b style='color:#f48fb1'>●X·Y파</b>(복합 조정) = 엘리엇 대응 파동 시작점(자동 추정, 3대 규칙 적용)</span>
-    <span>조짐: <i class="sw" style="background:#ff9800"></i>거래량 주황 = 분산일(0.2%↓ 하락 + 전일보다 거래 많음) · <i class="sw" style="background:#ffd600"></i>노랑·■처닝 = 고점권에서 거래량 1.5배↑인데 가격 제자리(±0.5%)·아래쪽 마감(위장 분산) · ■분산일5 = 25일 내 분산일 5회(고점 경계) · ●과열 = 20일 +20% 급등 뒤 3배 거래 클라이맥스(가격도 급등) · ▼공매 = 공매도 비중 급증(미국 FINRA, 최근 6개월)</span>
+    <span>조짐(오닐): <i class="sw" style="background:#ffd600"></i>노랑·■처닝 = 상승 고점권에서 1~3일 거래량 증가인데 가격 제자리(−1~+0.5%) · <i class="sw" style="background:#ff9800"></i>주황 = 분산일(0.2%↓ 하락 + 전일보다 거래 많음, 처닝 중이면 진주황) · <i class="sw" style="background:#ff1744"></i>빨강·▼대분산 = 처닝 뒤 10일 안 장중 신고가인데 전일보다 낮게 마감(대규모 분산) · ■분산일5 = 4주 안 분산일 5회 · 헤더 '분산일 n/4주' 3회↑ 노랑(보유 재평가) · ●과열 = 20일 +20% 급등 뒤 3배 거래 클라이맥스 · ▼공매 = 공매도 비중 급증(미국 FINRA, 최근 6개월)</span>
   </div>
   <div class="legend">ADX 표시:
     <button class="tab amode" data-m="strip">부호 ADX 띠 (상승 +, 하락 −)</button>
@@ -320,7 +320,7 @@ function drawHome(){if(!U.length)return;const ix=U.filter(it=>it.id.startsWith('
   document.getElementById('hsum').innerHTML=`기준 ${new Date(UPD).toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})} 갱신 · 주요 지표 ${ix.length}개 중 강세 ${cnt('강세')} · 약세 ${cnt('약세')} · 횡보 ${cnt('횡보')} · <a class="lk" onclick="showTab('V')">일일 검증 보기</a>`;
   document.getElementById('hidx').innerHTML=['한국','미국','일본','중국','글로벌'].map(g=>`<div class="grp">${g}</div><div class="cards">${
     ix.filter(it=>it.g===g).map(it=>`<div class="card" onclick="go('${it.id}')"><div class="nm"><span>${it.n}${INV.has(it.id)?' <small class="muted">↑=위험회피</small>':''}</span>${stBadge(it)}</div>
-      <div class="vl">${fmtP(it.c)} <small>${pc(it.ch)}</small></div>${spark(it.sp)}<div class="ft"><span>20일 ${pc(it.r20)}</span><span>부호ADX ${it.sa}</span>${it.dd&&it.sp&&!INV.has(it.id)?`<span class="${it.dd>=5?'wk':'muted'}" title="최근 25거래일 분산일(5회↑ 고점 경계)">분산일 ${it.dd}</span>`:''}</div></div>`).join('')}</div>`).join('');
+      <div class="vl">${fmtP(it.c)} <small>${pc(it.ch)}</small></div>${spark(it.sp)}<div class="ft"><span>20일 ${pc(it.r20)}</span><span>부호ADX ${it.sa}</span>${it.dd&&it.sp&&!INV.has(it.id)?`<span class="${it.dd>=3?'wk':'muted'}" title="최근 4주 분산일(3~5회 = 현금 확보 신호)">분산일 ${it.dd}</span>`:''}</div></div>`).join('')}</div>`).join('');
   drawSecTable('KR');drawSecTable('US');}
 
 // ---------- 일일 검증 ----------
@@ -341,7 +341,7 @@ async function drawVal(){const el=document.getElementById('vbody');
     <div class="desc">매일 빌드 때 전 종목 2년치로 다시 계산합니다. <b>초과</b> = 신호 방향으로 본 20일 평균 수익 − 기준(아무 날이나 보유), <b>적중차</b> = 신호 방향 적중률 − 기준의 같은 방향 확률.
       <b>판정</b>: 앞·뒤 절반 모두 초과 +0.5%p 이상·적중차 +2%p 이상(각 표본 100 이상)이면 <span class="ok">유효</span>, 둘 다 반대면 <span class="ng">역효과</span>, 그 외 <span class="wk">약함</span>.
       차트·목록의 신호 색이 이 판정을 따라 자동으로 바뀝니다. 주의: 연속된 날의 신호는 서로 독립이 아니어서 실제 신뢰도는 표본 수보다 낮습니다.</div>
-    ${['KR','US'].map(mk=>`<div class="grp">${mk==='KR'?'국내':'미국'} — 신호별</div>${tbl(mk,'sig',['★3↑','2↑','투매','매집','꺾임','분산','경고','분산일5','처닝','과열','공매↑'])}<div class="grp">${mk==='KR'?'국내':'미국'} — 국면별</div>${tbl(mk,'rg',['강세','횡보','약세'])}`).join('')}`;}
+    ${['KR','US'].map(mk=>`<div class="grp">${mk==='KR'?'국내':'미국'} — 신호별</div>${tbl(mk,'sig',['★3↑','2↑','투매','매집','꺾임','분산','경고','처닝','대분산','분산일5','과열','공매↑'])}<div class="grp">${mk==='KR'?'국내':'미국'} — 국면별</div>${tbl(mk,'rg',['강세','횡보','약세'])}`).join('')}`;}
 
 // ---------- 차트 (선택 종목) ----------
 function render(bars){
@@ -398,19 +398,25 @@ for(let i=40;i<N;i++){if(vr[i]==null||vr[i]<2)continue;const b=bars[i];
   const vmax=Math.max(vr[i]||0,vr[i-1]||0,vr[i-2]||0);
   if(C[i]<lo[i]&&vmax>=1.5&&i-lastCap>5){lastCap=i;markers.push({time:bars[i].time,position:'belowBar',shape:'arrowUp',color:'#4fc3f7',text:'투매',key:'투매'});}
   if(adx[i]>=40&&adx[i]<adx[i-3]&&pdi[i]>mdi[i]&&C[i]<mid[i]&&i-lastBrk>10){lastBrk=i;markers.push({time:bars[i].time,position:'aboveBar',shape:'arrowDown',color:'#ff8a65',text:'꺾임',key:'꺾임'});}}}
-// ---- 조짐: 분산일(오닐) · 과도거래 · 공매도 급증 (indicators.py 와 같은 규칙)
-// 분산일 = 종가 0.2%↑ 하락 + 거래량 전일보다 많음. 최근 25거래일 안, 그날 종가보다 5%↑ 오르면 소멸
-const V=bars.map(b=>b.volume),dday=bars.map((b,i)=>i>0&&V[i]>0&&V[i-1]>0&&C[i]<=C[i-1]*.998&&V[i]>V[i-1]);
-const ddn=bars.map((b,i)=>{let n=0,hi=-1e300;for(let j=i;j>Math.max(-1,i-25);j--){if(dday[j]&&hi<C[j]*1.05)n++;hi=Math.max(hi,C[j])}return n});
-// 처닝 = 상승 후 고점권(40일 고가 5% 이내, 40일 전보다 +3%↑)에서 거래량 1.5배↑·전일 초과인데 가격 진전 없음(±0.5%) + 범위 아래쪽 마감
-const churn=bars.map((b,i)=>{if(i<40)return false;const rng=b.high-b.low;let hi=-Infinity;for(let j=i-40;j<=i;j++)hi=Math.max(hi,bars[j].high);
-  return (vr[i]||0)>=1.5&&V[i]>V[i-1]&&Math.abs(C[i]/C[i-1]-1)<=.005&&rng>0&&(C[i]-b.low)/rng<.5&&C[i-40]<C[i]*.97&&b.high>=hi*.95;});
+// ---- 조짐 (오닐 『공매도 투자 기법』: 처닝 → 분산일 → 대규모 분산) — indicators.py 와 같은 규칙
+const V=bars.map(b=>b.volume);   // vma(20일 평균 거래량)는 위에서 계산
+// 분산일 = 종가 전일 대비 0.2%↑ 하락 + 거래량 전일 초과. 최근 20거래일(4주) 안, 그날 종가보다 5%↑ 오르면 소멸
+const dday=bars.map((b,i)=>i>0&&V[i]>0&&V[i-1]>0&&C[i]<=C[i-1]*.998&&V[i]>V[i-1]);
+const ddn=bars.map((b,i)=>{let n=0,hi=-1e300;for(let j=i;j>Math.max(-1,i-20);j--){if(dday[j]&&hi<C[j]*1.05)n++;hi=Math.max(hi,C[j])}return n});
+// 처닝(과도 거래) = 상승 추세 고점권에서 1~3일 연속 거래량 증가(마지막 날 평균 이상)인데 가격 변화 −1%~+0.5%
+const hi40=bars.map((b,i)=>{if(i<40)return null;let h=-Infinity;for(let j=i-40;j<i;j++)h=Math.max(h,bars[j].high);return h});
+const churn=bars.map((b,i)=>{if(i<41||!(vma[i]&&V[i]>=vma[i]&&C[i-40]<C[i]*.97&&b.high>=hi40[i]*.97))return false;
+  for(const k of [1,2,3]){let up=true;for(let j=i-k+1;j<=i;j++)if(!(V[j]>V[j-1]))up=false;const d=C[i]/C[i-k]-1;if(up&&d>=-.01&&d<=.005)return true}return false;});
+// 대규모 분산(B점) = 처닝 뒤 10일 안 장중 신고가(직전 40일 고가 경신)인데 전일보다 낮은 종가 + 거래량 전일 초과·평균 1.2배↑
+const bigd=bars.map((b,i)=>{if(i<41||!(vma[i]&&b.high>hi40[i]&&C[i]<C[i-1]&&V[i]>V[i-1]&&V[i]>=vma[i]*1.2))return false;
+  for(let j=Math.max(0,i-10);j<i;j++)if(churn[j])return true;return false;});
 const srs=bars.map(b=>b.sr??null);
-{let lDd=-99,lHot=-99,lSr=-99,lCh=-99;
+{let lDd=-99,lHot=-99,lSr=-99,lCh=-99,lBd=-99;
  for(let i=20;i<N;i++){
   if(ddn[i]>=5&&ddn[i-1]<5&&i-lDd>10){lDd=i;markers.push({time:bars[i].time,position:'aboveBar',shape:'square',color:'#ffa000',text:'분산일5',key:'분산일5'});}
   if((vr[i]||0)>=3&&up[i]!=null&&C[i]>up[i]&&C[i]>=C[i-20]*1.2&&i-lHot>10){lHot=i;markers.push({time:bars[i].time,position:'aboveBar',shape:'circle',color:'#ffee58',text:'과열',key:'과열'});}
   if(churn[i]&&i-lCh>10){lCh=i;markers.push({time:bars[i].time,position:'aboveBar',shape:'square',color:'#ffd600',text:'처닝',key:'처닝'});}
+  if(bigd[i]&&i-lBd>10){lBd=i;markers.push({time:bars[i].time,position:'aboveBar',shape:'arrowDown',color:'#ff1744',text:'대분산',key:'대분산'});}
   if(srs[i]!=null&&srs[i]>=55&&i-lSr>5){const pv=srs.slice(i-40,i).filter(x=>x!=null);
     if(pv.length>=20){const m=pv.reduce((a,b)=>a+b)/pv.length,sd=Math.sqrt(pv.reduce((a,b)=>a+(b-m)**2,0)/pv.length);
       if(srs[i]>=m+2*sd){lSr=i;markers.push({time:bars[i].time,position:'aboveBar',shape:'arrowDown',color:'#ba68c8',text:'공매',key:'공매↑'});}}}}}
@@ -418,7 +424,7 @@ markers.sort((a,b)=>a.time<b.time?-1:1);
 // 일일 검증 판정으로 색 조정: 유효 = 원래 색, 약함 = 흐리게, 역효과·보류 = 회색
 markers.forEach(m=>{const v=SIGV[m.key];if(!v||v==='유효')return;m.color=v==='약함'?m.color+'99':'#6b7280';if(v==='역효과')m.text+='✕';});
 
-const fmt=i=>`${bars[i].time}  종가 ${fmtP(C[i])}  BB폭 ${bw[i]!=null?(bw[i]*100).toFixed(1)+'%':'-'}${sq[i]?'(스퀴즈)':''}  ADX ${adx[i]?.toFixed(1)??'-'} (+DI ${pdi[i]?.toFixed(1)??'-'} / −DI ${mdi[i]?.toFixed(1)??'-'})  거래량 ${vr[i]?.toFixed(2)??'-'}배${churn[i]?'(처닝)':''}  점수 ${score[i]??'-'}  [${regimeName(i)}]  분산일 ${ddn[i]}/25${dday[i]?'(오늘)':''}${srs[i]!=null?`  공매도 ${srs[i]}%`:''}`;
+const fmt=i=>`${bars[i].time}  종가 ${fmtP(C[i])}  BB폭 ${bw[i]!=null?(bw[i]*100).toFixed(1)+'%':'-'}${sq[i]?'(스퀴즈)':''}  ADX ${adx[i]?.toFixed(1)??'-'} (+DI ${pdi[i]?.toFixed(1)??'-'} / −DI ${mdi[i]?.toFixed(1)??'-'})  거래량 ${vr[i]?.toFixed(2)??'-'}배${bigd[i]?'(대규모 분산)':churn[i]?'(처닝)':''}  점수 ${score[i]??'-'}  [${regimeName(i)}]  분산일 ${ddn[i]}/4주${dday[i]?'(오늘)':''}${srs[i]!=null?`  공매도 ${srs[i]}%`:''}`;
 
 // ---------- 공통 차트 헬퍼 ----------
 const LW=LightweightCharts;
@@ -434,7 +440,7 @@ function line(ch,arr,color,w=1,sqc){const s=ch.addLineSeries({color,lineWidth:w,
 function candles(ch){const s=ch.addCandlestickSeries({upColor:'#26a69a',downColor:'#ef5350',borderVisible:false,wickUpColor:'#26a69a',wickDownColor:'#ef5350'});
   s.setData(bars.map(({time,open,high,low,close})=>({time,open,high,low,close})));return s;}
 function bbLines(ch){line(ch,up,'#5b8def',1,'#ffa726');line(ch,lo,'#5b8def',1,'#ffa726');line(ch,mid,'rgba(160,160,160,.5)',1);}
-const volColor=i=>{if(churn[i])return'#ffd600';if(dday[i])return'rgba(255,152,0,.85)';   // 노랑 = 처닝, 주황 = 분산일
+const volColor=i=>{if(bigd[i])return'#ff1744';if(churn[i]&&dday[i])return'#ff6d00';if(churn[i])return'#ffd600';if(dday[i])return'rgba(255,152,0,.85)';   // 빨강 = 대규모 분산, 진주황 = 처닝+분산일, 노랑 = 처닝, 주황 = 분산일
   const u=bars[i].close>=bars[i].open,a=vr[i]>=2?1:vr[i]>=1.5?.65:.28;
   return u?`rgba(38,200,140,${a})`:`rgba(255,82,82,${a})`;};
 function hover(ch,el){ch.subscribeCrosshairMove(p=>{const i=p.logical;if(i!=null&&i>=0&&i<N)el.textContent=fmt(Math.round(i))});}
@@ -677,7 +683,7 @@ function syncC2(P,tr){if(!c2)return;
  drawC();}
 
 window.onShowC=()=>requestAnimationFrame(drawC);
-window.__chart={N,bars,adx,pdi,mdi,score,sq,waveLab,markers,ddn,churn}; // 점검용(파이썬 요약과 대조)
+window.__chart={N,bars,adx,pdi,mdi,score,sq,waveLab,markers,ddn,churn,bigd}; // 점검용(파이썬 요약과 대조)
 
 }
 
@@ -700,7 +706,7 @@ window.__chart={N,bars,adx,pdi,mdi,score,sq,waveLab,markers,ddn,churn}; // 점�
   document.title=`${it.n} · 3축 차트`;
   document.getElementById('tinfo').innerHTML=`<b>${it.n}</b><span class="muted">${it.id.startsWith('SEC')?'':code} · ${it.m}</span>
     <a class="lk" id="tsec">${it.s}</a><span>${it.d} 종가 <b>${fmtP(it.c)}</b> <span class="${it.ch>=0?'up':'dn'}">${it.ch>=0?'+':''}${it.ch}%</span></span>
-    ${rgBadge(it.rg)}<span>점수 ${it.sc} · 부호ADX ${it.sa}</span>${(it.fl||[]).length?`<span class="wk">⚠ ${it.fl.join('·')}</span>`:''}${it.wv?`<span>파동 ${it.wv[1]} (${it.wv[0].slice(2)}~)</span>`:''}${it.dd!=null?`<span class="${it.dd>=5?'wk':''}" title="최근 25거래일 분산일 수 (5회↑ = 고점 경계)">분산일 ${it.dd}</span>`:''}${it.sr!=null?`<span title="FINRA 보고 거래 중 공매도 비중">공매도 ${it.sr}%</span>`:''}
+    ${rgBadge(it.rg)}<span>점수 ${it.sc} · 부호ADX ${it.sa}</span>${(it.fl||[]).length?`<span class="wk">⚠ ${it.fl.join('·')}</span>`:''}${it.wv?`<span>파동 ${it.wv[1]} (${it.wv[0].slice(2)}~)</span>`:''}${it.dd!=null?`<span class="${it.dd>=3?'wk':''}" title="최근 4주(20거래일) 분산일 수 — 3~5회면 보유 재평가·현금 확보(오닐)">분산일 ${it.dd}/4주</span>`:''}${it.sr!=null?`<span title="FINRA 보고 거래 중 공매도 비중">공매도 ${it.sr}%</span>`:''}
     <span class="muted">갱신 ${new Date(UPD).toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}</span>`;
   document.getElementById('tsec').onclick=()=>{document.getElementById('ssec').value=it.s;showTab('S')};
   try{const j=await (await fetch(pathOf(it),{cache:'no-cache'})).json();
