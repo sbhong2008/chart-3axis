@@ -22,6 +22,9 @@ jobs:
         with: { python-version: "3.12" }
       - run: pip install -r requirements.txt
       - run: python3 build.py --out site   # 데이터는 커밋하지 않고 배포물로만 올림
+        env:   # 국내 공매도(KRX 로그인)용 — Secrets 가 없으면 국내 공매도만 건너뜀
+          KRX_ID: ${{ secrets.KRX_ID }}
+          KRX_PW: ${{ secrets.KRX_PW }}
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with: { path: site }

@@ -107,11 +107,40 @@ def compute(bars):
             last_dist = i; sigs.append((i, '분산'))
         if b['close'] >= b['open'] and b['low'] <= lw * 1.05 and C[i - 40] > C[i] * 1.1 and i - last_acc > 10:
             last_acc = i; sigs.append((i, '매집'))
+
+    # ---- 조짐 표시: 분산일(오닐) · 과도거래 · 공매도 급증 ----
+    # 분산일 = 종가 0.2%↑ 하락 + 거래량이 전일보다 많음. 최근 25거래일 안, 그날 종가보다 5%↑ 오르면 소멸
+    V = [b['volume'] for b in bars]
+    dday = [False] * N
+    for i in range(1, N):
+        dday[i] = V[i] > 0 and V[i - 1] > 0 and C[i] <= C[i - 1] * .998 and V[i] > V[i - 1]
+    ddn = [0] * N
+    for i in range(N):
+        n, hi = 0, -1e300
+        for j in range(i, max(-1, i - 25), -1):
+            if dday[j] and hi < C[j] * 1.05:
+                n += 1
+            hi = max(hi, C[j])
+        ddn[i] = n
+    sr = [b.get('sr') for b in bars]   # 공매도 비중(%) — 있는 종목만
+    last_dd = last_hot = last_sr = -99
+    for i in range(20, N):
+        if ddn[i] >= 5 and ddn[i - 1] < 5 and i - last_dd > 10:
+            last_dd = i; sigs.append((i, '분산일5'))          # 분산일 25일 내 5회 → 고점 경계(오닐)
+        if (vr[i] or 0) >= 3 and up[i] is not None and C[i] > up[i] and C[i] >= C[i - 20] * 1.2 and i - last_hot > 10:
+            last_hot = i; sigs.append((i, '과열'))            # 급등(20일 +20%↑) 뒤 평균 3배↑ 거래 + BB 상단 밖 = 매수 클라이맥스
+        if sr[i] is not None and sr[i] >= 55 and i - last_sr > 5:
+            prev = [x for x in sr[i - 40:i] if x is not None]
+            if len(prev) >= 20:
+                m = sum(prev) / len(prev)
+                sd = math.sqrt(sum((x - m) ** 2 for x in prev) / len(prev))
+                if sr[i] >= m + 2 * sd:
+                    last_sr = i; sigs.append((i, '공매↑'))     # 공매도 비중이 40일 평균+2σ 이상·55%↑
     sigs.sort()
 
     waves = elliott(bars, score, brk, sgn, N)
     return dict(mid=mid, up=up, lo=lo, bw=bw, sq=sq, pdi=pdi, mdi=mdi, adx=adx, vr=vr,
-                score=score, brk=brk, dir=dr, sgn=sgn, sigs=sigs, waves=waves)
+                score=score, brk=brk, dir=dr, sgn=sgn, sigs=sigs, waves=waves, dday=dday, ddn=ddn)
 
 
 def zigzag(bars, th):
@@ -134,12 +163,14 @@ def zigzag(bars, th):
 
 
 SEQ = ['1파', '2파', '3파', '4파', '5파', 'A파', 'B파', 'C파']
-TOPS = {'2파', '4파', 'A파', 'C파'}   # 고점에서 시작하는 파동(나머지는 저점에서 시작)
+TOPS = {'2파', '4파', 'A파', 'C파', 'Y파'}   # 고점에서 시작하는 파동(나머지는 저점에서 시작)
 
 
 def elliott(bars, score, brk, sgn, N):
     """엘리엇 대응 파동 '시작점' 자동 추정 — 앞 라벨을 이어받아 1→2→3→4→5→A→B→C 순서와
     고점·저점 교대를 지킨다(JS waveLab 과 같은 규칙).
+    엘리엇 3대 규칙: 2파 < 1파 시작 금지 · 3파 최단 금지 · 4파의 1파 영역 침범 금지.
+    복합 조정: C파 뒤 반등(X)·재하락(Y) = W(A~C)-X-Y.
     앵커 = 응축·무추세 뒤 점수 2 이상 돌파(30일 간격). 앵커 사이 공백은 5% 지그재그 피벗으로 채움."""
     Z4, Z5 = zigzag(bars, .04), zigzag(bars, .05)
     H = lambda i: bars[i]['high']
@@ -168,6 +199,17 @@ def elliott(bars, score, brk, sgn, N):
             return L(i) > L(last('1파'))
         return True
 
+    def put_a(i):
+        # 3파는 1·3·5파 중 가장 짧을 수 없음 → 위반이면 3·4·5를 하나의 연장 3파로 합치고 꼭지 = 4파 시작
+        p1, p2, p3, p4, p5 = (last(x) for x in ('1파', '2파', '3파', '4파', '5파'))
+        if None not in (p1, p2, p3, p4, p5) and p1 < p2 < p3 < p4 < p5:
+            w1, w3, w5 = H(p2) - L(p1), H(p4) - L(p3), H(i) - L(p5)
+            if w3 < w1 and w3 < w5:
+                cut(p4)
+                lab.append((i, '4파'))
+                return
+        lab.append((i, 'A파'))
+
     def recount(i):
         # 4파 눌림이 1파 영역을 침범 → 앞 3파·4파를 실제 1파·2파로 다시 세고, 저점 i = 3파 시작
         p3, i4 = last('3파'), lab[-1][0]
@@ -179,7 +221,7 @@ def elliott(bars, score, brk, sgn, N):
         return True
 
     def fill(upto):
-        while lab and lab[-1][1] != 'C파':
+        while lab and lab[-1][1] not in ('C파', 'Y파'):
             i0, n0 = lab[-1]
             nx = SEQ[SEQ.index(n0) + 1]
             p = next((p for p in Z5 if i0 + 4 < p[0] < upto), None)
@@ -189,7 +231,10 @@ def elliott(bars, score, brk, sgn, N):
                 if nx == '5파' and recount(p[0]):
                     continue
                 break
-            lab.append((p[0], nx))
+            if nx == 'A파':
+                put_a(p[0])
+            else:
+                lab.append((p[0], nx))
 
     last_s = -99
     for s in range(30, N):
@@ -227,7 +272,7 @@ def elliott(bars, score, brk, sgn, N):
             if h2 and l1 and L(l1[0]) < L(i3) and i3 - l1[0] <= 60:
                 pts = [(l1[0], '1파'), (h2[0], '2파'), (i3, '3파')]
             else:
-                pts = [(i3, '1파' if cur in ('A파', 'B파', 'C파') else '3파')]
+                pts = [(i3, '1파' if cur in ('A파', 'B파', 'C파', 'Y파') else '3파')]
             first = pts[0][0]
             cut(first)
             if lab and lab[-1][1] == 'B파':               # B 저점 뒤 새 상승 → 사이 고점 = C파 시작
@@ -270,7 +315,7 @@ def elliott(bars, score, brk, sgn, N):
                     if b_ is None or not ok('5파', b_):
                         continue
                     lab.append((b_, '5파'))
-                lab.append((T, 'A파'))                         # 상승 5파 뒤 꼭지 = A파 시작
+                put_a(T)                                       # 상승 5파 뒤 꼭지 = A파 시작(3파 최단이면 4파)
             elif cur == '2파':
                 p1 = last('1파')
                 if min(L(j) for j in range(lab[-1][0], s + 1)) >= L(p1):
@@ -297,14 +342,22 @@ def elliott(bars, score, brk, sgn, N):
                         continue
                     cut(pa + 1)
                     lab += [(b_, 'B파'), (T, 'C파')]
-            else:                                              # 앞 라벨 없음 또는 C파 진행 중
+            elif cur == 'X파':
+                continue
+            else:                                              # 앞 라벨 없음 또는 C·Y파 진행 중
                 k = max((p[0] for p in Z4 if p[1] == 'H' and p[0] <= s), default=None)
                 if k is None or (lab and k <= lab[-1][0]):
                     continue
-                if cur == 'C파':
+                if cur in ('C파', 'Y파'):
                     pc = lab[-1][0]
                     if H(k) < H(pc):
-                        continue                               # C파 하락 안의 반등
+                        pa, pb = last('A파'), last('B파')
+                        if cur == 'C파' and k - pc > 6 and pa is not None and pb is not None:
+                            x = bottom(pc + 1, k - 1)
+                            # 복합 조정: C파가 A파 길이의 61.8%↑ 진행 → 4%↑ 반등(X) → 다시 하락 이탈 = Y파
+                            if H(pc) - L(x) >= .618 * (H(pa) - L(pb)) and H(k) >= L(x) * 1.04 and k - x >= 3 and x - pc >= 3:
+                                lab += [(x, 'X파'), (k, 'Y파')]
+                        continue                               # 그 밖에는 C(Y)파 하락 안의 반등
                     lab += [(bottom(pc + 1, k - 1), '1파'), (k, '2파')] if k - 1 > pc else []
                     continue
                 lab.append((k, 'A파'))
@@ -345,11 +398,13 @@ def summary(bars, mkt='KR'):
         'sig': [sig[0], sig[1]] if sig else None,
         'wv': [bars[wave[0]]['time'], wave[1]] if wave else None,
         'fl': flags,
+        'dd': r['ddn'][i],
+        'sr': bars[i].get('sr'),
     }, r
 
 
 BULL = {'★3↑', '2↑', '매집', '투매'}
-BEAR = {'경고', '분산', '꺾임'}
+BEAR = {'경고', '분산', '꺾임', '분산일5', '과열', '공매↑'}
 
 
 def forward_stats(bars, r, recent_days=63):

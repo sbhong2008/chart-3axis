@@ -5,10 +5,12 @@
   site/                      web/ 의 앱 파일 복사본
   site/data/universe.json    검색·홈·섹터 목록용 (종목별 마지막 날 지표 요약)
   site/data/validation.json  일일 검증: 데이터 품질 + 신호·국면별 이후 수익률·적중률
-  site/data/p/<IX|KR|US|SEC>/<id>.json   일봉 (t,o,h,l,c,v)
-키·로그인 불필요(FinanceDataReader·yfinance 무료 소스).
+  site/data/p/<IX|KR|US|SEC>/<id>.json   일봉 (t,o,h,l,c,v[,sr=공매도 비중%])
+키·로그인 불필요(FinanceDataReader·yfinance·FINRA 무료 소스).
+국내 공매도는 KRX 로그인이 필요 → 환경변수 KRX_ID·KRX_PW(GitHub Secrets)가 있을 때만 pykrx 로 수집.
 """
 import argparse, datetime as dt, json, math, os, re, shutil, sys, time
+import urllib.request
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -213,6 +215,79 @@ def fetch_yf(pairs, start, label, chunk=100):
     return res
 
 
+SHORT_DAYS = 130  # 공매도 비중 수집 기간(거래일, 약 6개월)
+
+
+def short_days(n):
+    d, out = dt.date.today(), []
+    while len(out) < n + 15:          # 휴일 여유
+        if d.weekday() < 5:
+            out.append(d)
+        d -= dt.timedelta(days=1)
+    return out
+
+
+def fetch_finra_short(symbols):
+    """미국: FINRA Reg SHO 일별 공매도 거래량(CNMS) → {심볼: {날짜: 비중%}}. 심볼 BRK.B → BRK/B."""
+    want = {s.replace('.', '/'): s for s in symbols}
+    res = defaultdict(dict)
+
+    def one(d):
+        url = f'https://cdn.finra.org/equity/regsho/daily/CNMSshvol{d:%Y%m%d}.txt'
+        try:
+            with urllib.request.urlopen(urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'}), timeout=30) as r:
+                return d, r.read().decode()
+        except Exception:
+            return d, ''                 # 휴일·미게시
+
+    with ThreadPoolExecutor(8) as ex:
+        ok = 0
+        for d, txt in ex.map(one, short_days(SHORT_DAYS)):
+            if not txt:
+                continue
+            ok += 1
+            day = d.isoformat()
+            for ln in txt.splitlines()[1:]:
+                p = ln.split('|')
+                if len(p) >= 5 and p[1] in want:
+                    try:
+                        tot = float(p[4])
+                        if tot > 0:
+                            res[want[p[1]]][day] = round(float(p[2]) / tot * 100, 1)
+                    except ValueError:
+                        pass
+    log('공매도(FINRA)', ok, '일 ·', len(res), '종목')
+    return res
+
+
+def fetch_krx_short(codes):
+    """국내: KRX 공매도 거래량 비중(pykrx, KRX 로그인 필요). 자격 없으면 빈 결과."""
+    if not (os.environ.get('KRX_ID') and os.environ.get('KRX_PW')):
+        log('공매도(KRX) 건너뜀: KRX_ID·KRX_PW 없음')
+        return {}
+    try:
+        from pykrx import stock
+    except Exception as e:
+        log('공매도(KRX) 건너뜀: pykrx 없음', e); return {}
+    want, res, ok = set(codes), defaultdict(dict), 0
+    for d in short_days(SHORT_DAYS):
+        got = False
+        for mkt in ('KOSPI', 'KOSDAQ'):
+            try:
+                df = stock.get_shorting_volume_by_ticker(d.strftime('%Y%m%d'), mkt)
+            except Exception:
+                continue
+            if df is None or df.empty or '비중' not in df.columns:
+                continue
+            got = True
+            for code, v in df['비중'].items():
+                if code in want and v == v:
+                    res[code][d.isoformat()] = round(float(v), 1)
+        ok += got
+    log('공매도(KRX)', ok, '일 ·', len(res), '종목')
+    return res
+
+
 def sector_index(member_bars):
     """동일가중 섹터지수: 종목별 일간 변화율(시·고·저·종 / 전일 종가)의 평균을 누적. 거래량 = 거래대금 합."""
     by = {}
@@ -237,6 +312,8 @@ def write_bars(path, bars, digits):
     r = (lambda x: round(x, digits)) if digits else (lambda x: int(round(x)))
     obj = {'t': [b['time'] for b in bars], 'o': [r(b['open']) for b in bars], 'h': [r(b['high']) for b in bars],
            'l': [r(b['low']) for b in bars], 'c': [r(b['close']) for b in bars], 'v': [int(b['volume']) for b in bars]}
+    if any('sr' in b for b in bars):
+        obj['sr'] = [b.get('sr') for b in bars]
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, 'w') as f:
         json.dump(obj, f, separators=(',', ':'), ensure_ascii=False)
@@ -336,6 +413,19 @@ def main():
             log('나스닥 유동성 필터 후', sum(1 for x in keep if x.get('nq')), '종목 추가')
             uni = keep
         items += uni
+
+    # 2-1) 공매도 비중 → 일봉에 sr(%) 붙임 (미국 FINRA, 국내 KRX 자격 있을 때)
+    shorts = {}
+    us_ids = [it['id'] for it in items if it['id'].startswith('US:')]
+    kr_ids = [it['id'] for it in items if it['id'].startswith('KR:')]
+    if us_ids:
+        shorts.update({'US:' + k: v for k, v in fetch_finra_short([i[3:] for i in us_ids]).items()})
+    if kr_ids:
+        shorts.update({'KR:' + k: v for k, v in fetch_krx_short([i[3:] for i in kr_ids]).items()})
+    for i, m in shorts.items():
+        for b in bars.get(i) or []:
+            if b['time'] in m:
+                b['sr'] = m[b['time']]
 
     # 3) 섹터지수 (ETF·지표 제외, 종목 2개 이상)
     groups = defaultdict(list)
