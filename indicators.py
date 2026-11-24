@@ -222,8 +222,9 @@ def elliott(bars, score, brk, sgn, N):
             return p2 is None or p1 is None or p2 < p1 or L(i) > H(p2)
         if name == 'C파':  # B파 반등이 A파 시작 고점을 넘으면 C파 아님
             return H(i) < H(last('A파'))
-        if name == '3파':  # 2파가 1파 시작 아래로 내려가면 안 됨
-            return L(i) > L(last('1파'))
+        if name == '3파':  # 2파가 1파 시작 아래로 내려가면 안 됨 (같은 파동의 1파가 있을 때)
+            p1 = last('1파')
+            return p1 is None or L(i) > L(p1)
         return True
 
     def put_a(i):
@@ -248,20 +249,30 @@ def elliott(bars, score, brk, sgn, N):
         return True
 
     def fill(upto):
-        while lab and lab[-1][1] not in ('C파', 'Y파'):
+        # 앵커 사이 공백: 5% 지그재그 피벗을 따라 다음 순서 라벨로 채움.
+        # 너무 가까운(2거래일 미만) 피벗은 건너뛰고, 같은 쪽(고점→고점, 저점→저점) 피벗이 더 극단이면 현재 라벨을 그리로 옮김
+        if not lab:
+            return
+        k = next((n for n, p in enumerate(Z5) if p[0] > lab[-1][0]), len(Z5))
+        while lab and lab[-1][1] not in ('C파', 'Y파') and k < len(Z5) and Z5[k][0] < upto:
+            i, t = Z5[k]
+            k += 1
             i0, n0 = lab[-1]
+            if t == ('H' if n0 in TOPS else 'L'):           # 같은 쪽 피벗
+                if (H(i) > H(i0) if t == 'H' else L(i) < L(i0)) and ok(n0, i):
+                    lab[-1] = (i, n0)
+                continue
+            if i - i0 < 2:
+                continue
             nx = SEQ[SEQ.index(n0) + 1]
-            p = next((p for p in Z5 if i0 + 4 < p[0] < upto), None)
-            if not p or p[1] != ('H' if nx in TOPS else 'L'):
-                break
-            if not ok(nx, p[0]):
-                if nx == '5파' and recount(p[0]):
+            if not ok(nx, i):
+                if nx == '5파' and recount(i):
                     continue
                 break
             if nx == 'A파':
-                put_a(p[0])
+                put_a(i)
             else:
-                lab.append((p[0], nx))
+                lab.append((i, nx))
 
     last_s = -99
     for s in range(30, N):
@@ -355,7 +366,19 @@ def elliott(bars, score, brk, sgn, N):
                     T = top(lab[-1][0] + 1, s)
                     if ok(nx, T):
                         lab.append((T, nx))
-            elif cur in ('A파', 'B파'):
+            elif cur == 'B파':                                # B파 반등 고점 → A파보다 낮으면 C파 시작, 넘으면 A파 이동
+                pa, pb = last('A파'), lab[-1][0]
+                if s - pb < 2:
+                    continue
+                T = top(pb + 1, s)
+                if T - pb < 2:
+                    continue
+                if H(T) >= H(pa):
+                    cut(pa)
+                    lab.append((T, 'A파'))
+                else:
+                    lab.append((T, 'C파'))
+            elif cur == 'A파':
                 pa = last('A파')
                 T = top(pa, s)
                 if T == pa:
@@ -381,9 +404,10 @@ def elliott(bars, score, brk, sgn, N):
                         pa, pb = last('A파'), last('B파')
                         if cur == 'C파' and k - pc > 6 and pa is not None and pb is not None:
                             x = bottom(pc + 1, k - 1)
+                            y = top(x + 1, k) if k > x else None   # X 반등의 실제 꼭지 = Y파 시작
                             # 복합 조정: C파가 A파 길이의 61.8%↑ 진행 → 4%↑ 반등(X) → 다시 하락 이탈 = Y파
-                            if H(pc) - L(x) >= .618 * (H(pa) - L(pb)) and H(k) >= L(x) * 1.04 and k - x >= 3 and x - pc >= 3:
-                                lab += [(x, 'X파'), (k, 'Y파')]
+                            if y is not None and H(y) < H(pc) and H(pc) - L(x) >= .618 * (H(pa) - L(pb)) and H(y) >= L(x) * 1.04 and y - x >= 3 and x - pc >= 3:
+                                lab += [(x, 'X파'), (y, 'Y파')]
                         continue                               # 그 밖에는 C(Y)파 하락 안의 반등
                     lab += [(bottom(pc + 1, k - 1), '1파'), (k, '2파')] if k - 1 > pc else []
                     continue
