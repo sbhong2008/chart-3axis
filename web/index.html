@@ -110,7 +110,7 @@ tr.det>td{background:#12161d;white-space:normal;text-align:left;cursor:default}
     <span><i class="sw" style="background:rgb(38,200,140)"></i><i class="sw" style="background:rgb(255,82,82)"></i>거래량 양봉/음봉 (진할수록 평균 대비 큼)</span>
     <span>▲★3/▲2 상승 돌파 · ▲투매 = 하단 이탈+거래량(역발상 매수) · ▼꺾임 = 과열 추세 꺾임 · ▼경고 = 고점 다이버전스 · ■분산 = 고점 대량 매도 · ■매집 = 저점 대량 매수</span>
     <span><b style='color:#ffd54f'>●1~5파</b> / <b style='color:#ce93d8'>●A~C파</b> / <b style='color:#f48fb1'>●X·Y파</b>(복합 조정) = 엘리엇 대응 파동 시작점(자동 추정, 3대 규칙 적용)</span>
-    <span>조짐(오닐): <i class="sw" style="background:#ffd600"></i>노랑·■처닝 = 상승 고점권에서 1~3일 거래량 증가인데 가격 제자리(−1~+0.5%) · <i class="sw" style="background:#ff9800"></i>주황 = 분산일(0.2%↓ 하락 + 전일보다 거래 많음, 처닝 중이면 진주황) · <i class="sw" style="background:#ff1744"></i>빨강·▼대분산 = 처닝 뒤 10일 안 장중 신고가인데 전일보다 낮게 마감(대규모 분산) · ■분산일5 = 4주 안 분산일 5회 · 헤더 '분산일 n/4주' 3회↑ 노랑(보유 재평가) · ●과열 = 20일 +20% 급등 뒤 3배 거래 클라이맥스 · ▼공매 = 공매도 비중 급증(미국 FINRA, 최근 6개월)</span>
+    <span>조짐(오닐): <i class="sw" style="background:#ffd600"></i>노랑·■처닝 = 상승 고점권에서 1~3일 거래량 증가인데 가격 제자리(−1~+0.5%) · <i class="sw" style="background:#ff9800"></i>주황 = 분산일(0.2%↓ 하락 + 전일보다 거래 많음, 처닝 중이면 진주황) · <i class="sw" style="background:#ff1744"></i>빨강·▼대분산 = 처닝 뒤 10일 안 장중 신고가인데 전일보다 낮게 마감(대규모 분산) · ■분산일5 = 4주 안 분산일 5회 · 헤더 '분산일 n/4주' 3회↑ 노랑(보유 재평가) · ●과열 = 20일 +20% 급등 뒤 3배 거래 클라이맥스 · ▼공매 = 공매도 비중 급증(40일 평균+2σ·1.25배↑, 미국 FINRA·국내 KRX, 최근 6개월)</span>
   </div>
   <div class="legend">ADX 표시:
     <button class="tab amode" data-m="strip">부호 ADX 띠 (상승 +, 하락 −)</button>
@@ -417,9 +417,9 @@ const srs=bars.map(b=>b.sr??null);
   if((vr[i]||0)>=3&&up[i]!=null&&C[i]>up[i]&&C[i]>=C[i-20]*1.2&&i-lHot>10){lHot=i;markers.push({time:bars[i].time,position:'aboveBar',shape:'circle',color:'#ffee58',text:'과열',key:'과열'});}
   if(churn[i]&&i-lCh>10){lCh=i;markers.push({time:bars[i].time,position:'aboveBar',shape:'square',color:'#ffd600',text:'처닝',key:'처닝'});}
   if(bigd[i]&&i-lBd>10){lBd=i;markers.push({time:bars[i].time,position:'aboveBar',shape:'arrowDown',color:'#ff1744',text:'대분산',key:'대분산'});}
-  if(srs[i]!=null&&srs[i]>=55&&i-lSr>5){const pv=srs.slice(i-40,i).filter(x=>x!=null);
+  if(srs[i]!=null&&srs[i]>=3&&i-lSr>5){const pv=srs.slice(i-40,i).filter(x=>x!=null);
     if(pv.length>=20){const m=pv.reduce((a,b)=>a+b)/pv.length,sd=Math.sqrt(pv.reduce((a,b)=>a+(b-m)**2,0)/pv.length);
-      if(srs[i]>=m+2*sd){lSr=i;markers.push({time:bars[i].time,position:'aboveBar',shape:'arrowDown',color:'#ba68c8',text:'공매',key:'공매↑'});}}}}}
+      if(srs[i]>=m+2*sd&&srs[i]>=m*1.25){lSr=i;markers.push({time:bars[i].time,position:'aboveBar',shape:'arrowDown',color:'#ba68c8',text:'공매',key:'공매↑'});}}}}}
 markers.sort((a,b)=>a.time<b.time?-1:1);
 // 일일 검증 판정으로 색 조정: 유효 = 원래 색, 약함 = 흐리게, 역효과·보류 = 회색
 markers.forEach(m=>{const v=SIGV[m.key];if(!v||v==='유효')return;m.color=v==='약함'?m.color+'99':'#6b7280';if(v==='역효과')m.text+='✕';});
@@ -706,7 +706,7 @@ window.__chart={N,bars,adx,pdi,mdi,score,sq,waveLab,markers,ddn,churn,bigd}; // 
   document.title=`${it.n} · 3축 차트`;
   document.getElementById('tinfo').innerHTML=`<b>${it.n}</b><span class="muted">${it.id.startsWith('SEC')?'':code} · ${it.m}</span>
     <a class="lk" id="tsec">${it.s}</a><span>${it.d} 종가 <b>${fmtP(it.c)}</b> <span class="${it.ch>=0?'up':'dn'}">${it.ch>=0?'+':''}${it.ch}%</span></span>
-    ${rgBadge(it.rg)}<span>점수 ${it.sc} · 부호ADX ${it.sa}</span>${(it.fl||[]).length?`<span class="wk">⚠ ${it.fl.join('·')}</span>`:''}${it.wv?`<span>파동 ${it.wv[1]} (${it.wv[0].slice(2)}~)</span>`:''}${it.dd!=null?`<span class="${it.dd>=3?'wk':''}" title="최근 4주(20거래일) 분산일 수 — 3~5회면 보유 재평가·현금 확보(오닐)">분산일 ${it.dd}/4주</span>`:''}${it.sr!=null?`<span title="FINRA 보고 거래 중 공매도 비중">공매도 ${it.sr}%</span>`:''}
+    ${rgBadge(it.rg)}<span>점수 ${it.sc} · 부호ADX ${it.sa}</span>${(it.fl||[]).length?`<span class="wk">⚠ ${it.fl.join('·')}</span>`:''}${it.wv?`<span>파동 ${it.wv[1]} (${it.wv[0].slice(2)}~)</span>`:''}${it.dd!=null?`<span class="${it.dd>=3?'wk':''}" title="최근 4주(20거래일) 분산일 수 — 3~5회면 보유 재평가·현금 확보(오닐)">분산일 ${it.dd}/4주</span>`:''}${it.sr!=null?`<span title="거래량 중 공매도 비중 (미국 FINRA 보고분 / 국내 KRX)">공매도 ${it.sr}%</span>`:''}
     <span class="muted">갱신 ${new Date(UPD).toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}</span>`;
   document.getElementById('tsec').onclick=()=>{document.getElementById('ssec').value=it.s;showTab('S')};
   try{const j=await (await fetch(pathOf(it),{cache:'no-cache'})).json();

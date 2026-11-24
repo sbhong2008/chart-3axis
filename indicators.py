@@ -155,13 +155,14 @@ def compute(bars):
             last_ch = i; sigs.append((i, '처닝'))
         if bigd[i] and i - last_bd > 10:
             last_bd = i; sigs.append((i, '대분산'))
-        if sr[i] is not None and sr[i] >= 55 and i - last_sr > 5:
+        if sr[i] is not None and sr[i] >= 3 and i - last_sr > 5:
             prev = [x for x in sr[i - 40:i] if x is not None]
             if len(prev) >= 20:
                 m = sum(prev) / len(prev)
                 sd = math.sqrt(sum((x - m) ** 2 for x in prev) / len(prev))
-                if sr[i] >= m + 2 * sd:
-                    last_sr = i; sigs.append((i, '공매↑'))     # 공매도 비중이 40일 평균+2σ 이상·55%↑
+                if sr[i] >= m + 2 * sd and sr[i] >= m * 1.25:
+                    # 공매도 비중이 40일 평균+2σ 이상·평균의 1.25배↑ (시장마다 수준이 달라 상대 기준: 미국 FINRA ≈45%, 국내 KRX ≈1~5%)
+                    last_sr = i; sigs.append((i, '공매↑'))
     sigs.sort()
 
     waves = elliott(bars, score, brk, sgn, N)
