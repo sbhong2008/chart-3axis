@@ -270,14 +270,31 @@ def fetch_krx_short(codes):
     except Exception as e:
         log('공매도(KRX) 건너뜀: pykrx 없음', e); return {}
     want, res, ok = set(codes), defaultdict(dict), 0
+    t0, fails = time.time(), 0
+
+    def get(ds, mkt):
+        # KRX 가 연속 요청을 거부하면 pykrx 가 빈 표를 돌려줌 → 쉬었다가 최대 3번 시도(휴장일도 빈 표라 몇 초 낭비는 감수)
+        nonlocal fails
+        for k in range(3):
+            try:
+                df = stock.get_shorting_volume_by_ticker(ds, mkt)
+                if df is not None and not df.empty and '비중' in df.columns:
+                    fails = 0
+                    return df
+            except Exception:
+                pass
+            fails += 1
+            time.sleep(20 if fails >= 5 else 2 * (k + 1))
+        return None
+
     for d in short_days(SHORT_DAYS):
+        if time.time() - t0 > 900:           # 최대 15분: 넘으면 받은 만큼만 사용
+            log('공매도(KRX) 시간 제한으로 중단'); break
         got = False
         for mkt in ('KOSPI', 'KOSDAQ'):
-            try:
-                df = stock.get_shorting_volume_by_ticker(d.strftime('%Y%m%d'), mkt)
-            except Exception:
-                continue
-            if df is None or df.empty or '비중' not in df.columns:
+            df = get(d.strftime('%Y%m%d'), mkt)
+            time.sleep(.4)                   # 요청 간격
+            if df is None:
                 continue
             got = True
             for code, v in df['비중'].items():
