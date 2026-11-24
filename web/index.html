@@ -540,26 +540,80 @@ function zigzag(th){const P=[];let dn=0,ei=0;
     if(dn>=0){if(h>=bars[ei].high){if(!dn)dn=1;ei=i}else if(l<=bars[ei].high*(1-th)){P.push({i:ei,t:'H'});dn=-1;ei=i}}
     else{if(l<=bars[ei].low)ei=i;else if(h>=bars[ei].low*(1+th)){P.push({i:ei,t:'L'});dn=1;ei=i}}}
   return P;} // 진행 중(미확정) 마지막 피벗은 제외
-const Z3=zigzag(.03),Z4=zigzag(.04),Z5=zigzag(.05);
+const Z4=zigzag(.04),Z5=zigzag(.05);
 const sgnA=i=>adx[i]==null?0:adx[i]*Math.max(-1,Math.min(1,(pdi[i]-mdi[i])/10));
-const waveLab=[];
-{let last=-99;
- for(let s=30;s<N;s++){if(score[s]==null||score[s]<2||!brk[s])continue;
-  let calm=false;for(let j=s-15;j<s;j++)if(Math.abs(sgnA(j))<20)calm=true;   // 응축/무추세 이후의 돌파만 앵커
-  if(!calm||s-last<30)continue;last=s;const pts=[];
-  if(brk[s]>0){ // 상승 앵커: 3파 시작 = 직전 15일 최저점, 1·2파 = 그 앞 3% 피벗, 4·5·A·B·C = 이후 5% 피벗
-    let i3=s;for(let j=s-15;j<=s;j++)if(bars[j].low<bars[i3].low)i3=j;
-    const h2=[...Z3].reverse().find(p=>p.t==='H'&&p.i<i3),l1=h2&&[...Z3].reverse().find(p=>p.t==='L'&&p.i<h2.i);
-    if(h2&&l1&&bars[l1.i].low<bars[i3].low&&i3-l1.i<=60)pts.push([l1.i,'1파'],[h2.i,'2파']);
-    pts.push([i3,'3파']);const fw=Z5.filter(p=>p.i>i3);if(fw[0]&&fw[0].t!=='H')fw.shift();
-    ['4파','5파','A파','B파','C파'].forEach((L,n)=>{if(fw[n])pts.push([fw[n].i,L])});
-  }else{ // 하락 앵커: C파 시작 = 마지막 4% 고점 피벗, A·B = 그 앞 피벗
-    const k=Z4.map(p=>p.t==='H'&&p.i<=s).lastIndexOf(true);if(k<0)continue;
-    if(Z4[k-2]&&bars[Z4[k-2].i].high>bars[Z4[k].i].high)pts.push([Z4[k-2].i,'A파'],[Z4[k-1].i,'B파']);
-    pts.push([Z4[k].i,'C파']);}
-  const first=Math.min(...pts.map(p=>p[0]));
-  for(let n=waveLab.length-1;n>=0;n--)if(waveLab[n][0]>=first)waveLab.splice(n,1); // 뒤 앵커가 우선
-  waveLab.push(...pts);}}
+// 앞 라벨을 이어받아 1→2→3→4→5→A→B→C 순서와 고점·저점 교대를 지킴 (indicators.py elliott 과 같은 규칙)
+const WSEQ=['1파','2파','3파','4파','5파','A파','B파','C파'],WTOP=new Set(['2파','4파','A파','C파']);
+const waveLab=(()=>{const lab=[],Hh=i=>bars[i].high,Ll=i=>bars[i].low;
+  const last=n=>{for(let k=lab.length-1;k>=0;k--)if(lab[k][1]===n)return lab[k][0];return null};
+  const cut=i=>{while(lab.length&&lab[lab.length-1][0]>=i)lab.pop()};
+  const lt=()=>lab[lab.length-1];
+  const top=(a,b)=>{let t=a;for(let j=a;j<=b;j++)if(Hh(j)>=Hh(t))t=j;return t};      // 같으면 뒤쪽
+  const bottom=(a,b)=>{let t=a;for(let j=a;j<=b;j++)if(Ll(j)<=Ll(t))t=j;return t};
+  const lastPiv=(Z,t,lim)=>{let r=null;for(const p of Z)if(p.t===t&&p.i<lim)r=p;return r};
+  const ok=(n,i)=>{
+    if(n==='5파'){const p1=last('1파'),p2=last('2파');return p2==null||p1==null||p2<p1||Ll(i)>Hh(p2)}  // 4파가 1파 영역 침범 금지
+    if(n==='C파')return Hh(i)<Hh(last('A파'));   // B파 반등이 A파 고점을 넘으면 C파 아님
+    if(n==='3파')return Ll(i)>Ll(last('1파'));   // 2파가 1파 시작 아래로 금지
+    return true};
+  const recount=i=>{ // 4파 눌림이 1파 영역 침범 → 앞 3·4파를 1·2파로 다시 세고 저점 i = 3파
+    const p3=last('3파'),i4=lt()[0];if(Ll(i)<=Ll(p3)||i-i4<3)return false;
+    const p1=last('1파'),p2=last('2파');cut(p1!=null&&p2!=null&&p1<p2&&p2<p3?p1:p3);
+    lab.push([p3,'1파'],[i4,'2파'],[i,'3파']);return true};
+  const fill=upto=>{while(lab.length&&lt()[1]!=='C파'){const [i0,n0]=lt(),nx=WSEQ[WSEQ.indexOf(n0)+1];
+    const p=Z5.find(p=>p.i>i0+4&&p.i<upto);if(!p||p.t!==(WTOP.has(nx)?'H':'L'))break;
+    if(!ok(nx,p.i)){if(nx==='5파'&&recount(p.i))continue;break}
+    lab.push([p.i,nx]);}};
+  let lastS=-99;
+  for(let s=30;s<N;s++){if(score[s]==null||score[s]<2||!brk[s])continue;
+    let calm=false;for(let j=s-15;j<s;j++)if(Math.abs(sgnA(j))<20)calm=true;   // 응축/무추세 이후의 돌파만 앵커
+    if(!calm||s-lastS<30)continue;lastS=s;fill(s-15);
+    const cur=lab.length?lt()[1]:null;
+    if(brk[s]>0){ // ---- 상승 앵커
+      const i3=bottom(s-15,s);
+      if(['1파','2파','3파','4파','5파'].includes(cur)&&lt()[0]>=i3)continue;   // 같은 상승의 연장
+      if(cur==='5파')continue;
+      const p3=last('3파');
+      if(cur==='3파'||cur==='4파'){let mn=Infinity;for(let j=p3;j<=s;j++)mn=Math.min(mn,Ll(j));
+        if(mn>=Ll(p3)){const i4=cur==='4파'?lt()[0]:(i3-1>p3?top(p3+1,i3-1):null);
+          if(i4!=null&&i3-i4>=3&&ok('5파',i3)){cut(p3+1);lab.push([i4,'4파'],[i3,'5파']);continue}}}  // 4파 눌림 → 5파
+      if(cur==='1파'&&Ll(i3)>Ll(lt()[0])&&i3-lt()[0]>=6){lab.push([top(lt()[0]+1,i3-1),'2파'],[i3,'3파']);continue}
+      if(cur==='2파'&&Ll(i3)>Ll(last('1파'))&&i3-lt()[0]>=3){lab.push([i3,'3파']);continue}
+      if(cur==='4파'&&recount(i3))continue;
+      const h2=lastPiv(Z4,'H',i3),l1=h2&&lastPiv(Z4,'L',h2.i);
+      const pts=h2&&l1&&Ll(l1.i)<Ll(i3)&&i3-l1.i<=60?[[l1.i,'1파'],[h2.i,'2파'],[i3,'3파']]
+        :[[i3,['A파','B파','C파'].includes(cur)?'1파':'3파']];
+      const first=pts[0][0];cut(first);
+      if(lab.length&&lt()[1]==='B파'){const b0=lt()[0],c=first-1>b0?top(b0+1,first-1):null;  // B 뒤 새 상승 → 사이 고점 = C파
+        if(c!=null&&ok('C파',c)&&first-c>=2&&c-b0>=3)lab.push([c,'C파']);else lab.pop();}
+      while(lab.length&&(['1파','2파','3파','4파'].includes(lt()[1])||!WTOP.has(lt()[1])))lab.pop(); // 실패한 상승 시도 제거·교대 유지
+      if(lab.length&&lt()[1]==='A파'){const pa=lt()[0];   // A파 뒤 바로 새 상승 → 사이 4% 피벗으로 B·C 보충
+        const b=Z4.find(p=>p.t==='L'&&p.i>pa+2&&p.i<first-3),c=b&&Z4.find(p=>p.t==='H'&&p.i>b.i+2&&p.i<first-2);
+        if(c&&ok('C파',c.i))lab.push([b.i,'B파'],[c.i,'C파']);}
+      lab.push(...pts);
+    }else{ // ---- 하락 앵커
+      if(['1파','3파','4파','5파'].includes(cur)){const st=lt()[0],T=top(st,s);if(T===st)continue;
+        if(cur==='1파'){lab.push([T,'2파']);continue}
+        if(cur==='3파'){let best=null;   // 꼭지 전 가장 깊은 눌림(3%↑)을 4·5파로
+          for(let a=st+3;a<T-3;a++){const b=bottom(a+1,T-2),dd=1-Ll(b)/Hh(a);
+            if(dd>=.03&&Hh(a)>Hh(st)&&ok('5파',b)&&(!best||dd>best[0]))best=[dd,a,b];}
+          if(!best){lab.push([T,'4파']);continue}
+          lab.push([best[1],'4파'],[best[2],'5파']);}
+        else if(cur==='4파'){const b=T-1>st?bottom(st+1,T-1):null;if(b==null||!ok('5파',b))continue;lab.push([b,'5파']);}
+        lab.push([T,'A파']);   // 상승 5파 뒤 꼭지 = A파 시작
+      }else if(cur==='2파'){const p1=last('1파');let mn=Infinity;for(let j=lt()[0];j<=s;j++)mn=Math.min(mn,Ll(j));
+        if(mn>=Ll(p1))continue;cut(p1);   // 1파 시작 아래로 → 상승 실패, 앞 조정으로 복귀
+        if(!lab.length)lab.push([top(Math.max(0,s-60),s),'A파']);
+        else if(!WTOP.has(lt()[1])){const nx=WSEQ[WSEQ.indexOf(lt()[1])+1],T=top(lt()[0]+1,s);if(ok(nx,T))lab.push([T,nx]);}
+      }else if(cur==='A파'||cur==='B파'){const pa=last('A파'),T=top(pa,s);if(T===pa)continue;
+        if(Hh(T)>=Hh(pa)){cut(pa);lab.push([T,'A파'])}   // A파 고점 갱신 → 꼭지 이동
+        else{const b=T-1>pa?bottom(pa+1,T-1):null;if(b==null||T-b<3||b-pa<3)continue;cut(pa+1);lab.push([b,'B파'],[T,'C파']);}
+      }else{const kp=lastPiv(Z4,'H',s+1);if(!kp||(lab.length&&kp.i<=lt()[0]))continue;const k=kp.i;
+        if(cur==='C파'){const pc=lt()[0];if(Hh(k)<Hh(pc))continue;   // C파 하락 안의 반등
+          if(k-1>pc)lab.push([bottom(pc+1,k-1),'1파'],[k,'2파']);continue;}
+        lab.push([k,'A파']);}
+    }}
+  fill(N);return lab.sort((a,b)=>a[0]-b[0]);})();
 // 2·4·A·C파는 고점에서 시작(위), 1·3·5·B파는 저점에서 시작(아래) — 하락 앵커의 A·B·C도 같은 배치
 const waveMarkers=waveLab.map(([i,L])=>{const top=/^(2|4|A|C)/.test(L);
   return{time:bars[i].time,position:top?'aboveBar':'belowBar',shape:'circle',color:/^[A-C]/.test(L)?'#ce93d8':'#ffd54f',text:L};});

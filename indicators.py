@@ -133,44 +133,182 @@ def zigzag(bars, th):
     return P
 
 
+SEQ = ['1파', '2파', '3파', '4파', '5파', 'A파', 'B파', 'C파']
+TOPS = {'2파', '4파', 'A파', 'C파'}   # 고점에서 시작하는 파동(나머지는 저점에서 시작)
+
+
 def elliott(bars, score, brk, sgn, N):
-    """엘리엇 대응 파동 '시작점' 자동 추정 (JS waveLab 과 같은 규칙)."""
-    Z3, Z4, Z5 = zigzag(bars, .03), zigzag(bars, .04), zigzag(bars, .05)
-    lab, last = [], -99
+    """엘리엇 대응 파동 '시작점' 자동 추정 — 앞 라벨을 이어받아 1→2→3→4→5→A→B→C 순서와
+    고점·저점 교대를 지킨다(JS waveLab 과 같은 규칙).
+    앵커 = 응축·무추세 뒤 점수 2 이상 돌파(30일 간격). 앵커 사이 공백은 5% 지그재그 피벗으로 채움."""
+    Z4, Z5 = zigzag(bars, .04), zigzag(bars, .05)
+    H = lambda i: bars[i]['high']
+    L = lambda i: bars[i]['low']
+    lab = []
+
+    def last(name):
+        return next((i for i, n in reversed(lab) if n == name), None)
+
+    def cut(i):
+        lab[:] = [x for x in lab if x[0] < i]
+
+    def top(a, b):   # a~b 구간 최고가 날(같으면 뒤쪽)
+        return max(range(a, b + 1), key=lambda j: (H(j), j))
+
+    def bottom(a, b):
+        return min(range(a, b + 1), key=lambda j: (L(j), -j))
+
+    def ok(name, i):  # 엘리엇 가격 규칙
+        if name == '5파':  # 4파 끝이 1파 끝(=2파 시작) 아래로 겹치면 안 됨
+            p1, p2 = last('1파'), last('2파')
+            return p2 is None or p1 is None or p2 < p1 or L(i) > H(p2)
+        if name == 'C파':  # B파 반등이 A파 시작 고점을 넘으면 C파 아님
+            return H(i) < H(last('A파'))
+        if name == '3파':  # 2파가 1파 시작 아래로 내려가면 안 됨
+            return L(i) > L(last('1파'))
+        return True
+
+    def recount(i):
+        # 4파 눌림이 1파 영역을 침범 → 앞 3파·4파를 실제 1파·2파로 다시 세고, 저점 i = 3파 시작
+        p3, i4 = last('3파'), lab[-1][0]
+        if L(i) <= L(p3) or i - i4 < 3:
+            return False
+        p1, p2 = last('1파'), last('2파')
+        cut(p1 if p1 is not None and p2 is not None and p1 < p2 < p3 else p3)
+        lab.extend([(p3, '1파'), (i4, '2파'), (i, '3파')])
+        return True
+
+    def fill(upto):
+        while lab and lab[-1][1] != 'C파':
+            i0, n0 = lab[-1]
+            nx = SEQ[SEQ.index(n0) + 1]
+            p = next((p for p in Z5 if i0 + 4 < p[0] < upto), None)
+            if not p or p[1] != ('H' if nx in TOPS else 'L'):
+                break
+            if not ok(nx, p[0]):
+                if nx == '5파' and recount(p[0]):
+                    continue
+                break
+            lab.append((p[0], nx))
+
+    last_s = -99
     for s in range(30, N):
         if score[s] is None or score[s] < 2 or not brk[s]:
             continue
-        calm = any(abs(sgn(j)) < 20 for j in range(s - 15, s))
-        if not calm or s - last < 30:
+        if not any(abs(sgn(j)) < 20 for j in range(s - 15, s)) or s - last_s < 30:
             continue
-        last = s
-        pts = []
-        if brk[s] > 0:
-            i3 = s
-            for j in range(s - 15, s + 1):
-                if bars[j]['low'] < bars[i3]['low']:
-                    i3 = j
-            h2 = next((p for p in reversed(Z3) if p[1] == 'H' and p[0] < i3), None)
-            l1 = next((p for p in reversed(Z3) if p[1] == 'L' and h2 and p[0] < h2[0]), None)
-            if h2 and l1 and bars[l1[0]]['low'] < bars[i3]['low'] and i3 - l1[0] <= 60:
-                pts += [(l1[0], '1파'), (h2[0], '2파')]
-            pts.append((i3, '3파'))
-            fw = [p for p in Z5 if p[0] > i3]
-            if fw and fw[0][1] != 'H':
-                fw.pop(0)
-            for n, L in enumerate(['4파', '5파', 'A파', 'B파', 'C파']):
-                if n < len(fw):
-                    pts.append((fw[n][0], L))
-        else:
-            ks = [k for k, p in enumerate(Z4) if p[1] == 'H' and p[0] <= s]
-            if not ks:
+        last_s = s
+        fill(s - 15)
+        cur = lab[-1][1] if lab else None
+        if brk[s] > 0:  # ---- 상승 앵커
+            i3 = bottom(s - 15, s)
+            if cur in ('1파', '2파', '3파', '4파', '5파') and lab[-1][0] >= i3:
+                continue                                   # 같은 상승의 연장
+            if cur == '5파':
                 continue
-            k = ks[-1]
-            if k >= 2 and bars[Z4[k - 2][0]]['high'] > bars[Z4[k][0]]['high']:
-                pts += [(Z4[k - 2][0], 'A파'), (Z4[k - 1][0], 'B파')]
-            pts.append((Z4[k][0], 'C파'))
-        first = min(p[0] for p in pts)
-        lab = [x for x in lab if x[0] < first] + pts
+            p3 = last('3파')
+            if cur in ('3파', '4파') and min(L(j) for j in range(p3, s + 1)) >= L(p3):
+                i4 = lab[-1][0] if cur == '4파' else (top(p3 + 1, i3 - 1) if i3 - 1 > p3 else None)
+                if i4 is not None and i3 - i4 >= 3 and ok('5파', i3):
+                    cut(p3 + 1)
+                    lab += [(i4, '4파'), (i3, '5파')]     # 3파 뒤 눌림(4파) → 재돌파 = 5파 시작
+                    continue
+            if cur == '1파' and L(i3) > L(lab[-1][0]) and i3 - lab[-1][0] >= 6:
+                lab += [(top(lab[-1][0] + 1, i3 - 1), '2파'), (i3, '3파')]   # 1파 뒤 눌림 → 3파
+                continue
+            if cur == '2파' and L(i3) > L(last('1파')) and i3 - lab[-1][0] >= 3:
+                lab.append((i3, '3파'))                     # 2파 조정이 1파 시작 위에서 끝남 → 3파
+                continue
+            if cur == '4파' and recount(i3):
+                continue
+            # 새 상승 파동: 1·2파 = 3파 직전 4% 피벗(조건 맞을 때)
+            h2 = max((p for p in Z4 if p[1] == 'H' and p[0] < i3), key=lambda p: p[0], default=None)
+            l1 = max((p for p in Z4 if p[1] == 'L' and h2 and p[0] < h2[0]), key=lambda p: p[0], default=None)
+            if h2 and l1 and L(l1[0]) < L(i3) and i3 - l1[0] <= 60:
+                pts = [(l1[0], '1파'), (h2[0], '2파'), (i3, '3파')]
+            else:
+                pts = [(i3, '1파' if cur in ('A파', 'B파', 'C파') else '3파')]
+            first = pts[0][0]
+            cut(first)
+            if lab and lab[-1][1] == 'B파':               # B 저점 뒤 새 상승 → 사이 고점 = C파 시작
+                c = top(lab[-1][0] + 1, first - 1) if first - 1 > lab[-1][0] else None
+                if c is not None and ok('C파', c) and first - c >= 2 and c - lab[-1][0] >= 3:
+                    lab.append((c, 'C파'))
+                else:
+                    lab.pop()
+            while lab and (lab[-1][1] in ('1파', '2파', '3파', '4파') or lab[-1][1] not in TOPS):
+                lab.pop()                                  # 실패한 상승 시도(시작점 아래로 되밀림)는 라벨 제거, 교대 유지
+            if lab and lab[-1][1] == 'A파':                # A파 뒤 바로 새 상승 → 사이 4% 피벗으로 B·C 보충
+                pa = lab[-1][0]
+                b_ = next((p[0] for p in Z4 if p[1] == 'L' and pa + 2 < p[0] < first - 3), None)
+                c = next((p[0] for p in Z4 if b_ is not None and p[1] == 'H' and b_ + 2 < p[0] < first - 2), None)
+                if c is not None and ok('C파', c):
+                    lab += [(b_, 'B파'), (c, 'C파')]
+            lab += pts
+        else:  # ---- 하락 앵커
+            if cur in ('1파', '3파', '4파', '5파'):
+                st = lab[-1][0]
+                T = top(st, s)
+                if T == st:
+                    continue
+                if cur == '1파':
+                    lab.append((T, '2파'))                    # 1파 상승 뒤 하락 = 2파 조정 시작
+                    continue
+                if cur == '3파':                               # 꼭지 전 가장 깊은 눌림(3%↑)을 4·5파로
+                    best = None
+                    for a in range(st + 3, T - 3):
+                        b_ = bottom(a + 1, T - 2)
+                        dd = 1 - L(b_) / H(a)
+                        if dd >= .03 and H(a) > H(st) and ok('5파', b_) and (best is None or dd > best[0]):
+                            best = (dd, a, b_)
+                    if not best:
+                        lab.append((T, '4파'))                 # 눌림 없이 꼭지 → 4파 조정 시작
+                        continue
+                    lab += [(best[1], '4파'), (best[2], '5파')]
+                elif cur == '4파':
+                    b_ = bottom(st + 1, T - 1) if T - 1 > st else None
+                    if b_ is None or not ok('5파', b_):
+                        continue
+                    lab.append((b_, '5파'))
+                lab.append((T, 'A파'))                         # 상승 5파 뒤 꼭지 = A파 시작
+            elif cur == '2파':
+                p1 = last('1파')
+                if min(L(j) for j in range(lab[-1][0], s + 1)) >= L(p1):
+                    continue                                   # 2파 조정 진행 중
+                cut(p1)                                        # 1파 시작 아래로 → 상승 실패, 앞 조정으로 복귀
+                if not lab:
+                    lab.append((top(max(0, s - 60), s), 'A파'))
+                elif lab[-1][1] not in TOPS:
+                    nx = SEQ[SEQ.index(lab[-1][1]) + 1]
+                    T = top(lab[-1][0] + 1, s)
+                    if ok(nx, T):
+                        lab.append((T, nx))
+            elif cur in ('A파', 'B파'):
+                pa = last('A파')
+                T = top(pa, s)
+                if T == pa:
+                    continue
+                if H(T) >= H(pa):
+                    cut(pa)
+                    lab.append((T, 'A파'))                     # A파 시작 고점 갱신 → 꼭지 이동
+                else:
+                    b_ = bottom(pa + 1, T - 1) if T - 1 > pa else None
+                    if b_ is None or T - b_ < 3 or b_ - pa < 3:
+                        continue
+                    cut(pa + 1)
+                    lab += [(b_, 'B파'), (T, 'C파')]
+            else:                                              # 앞 라벨 없음 또는 C파 진행 중
+                k = max((p[0] for p in Z4 if p[1] == 'H' and p[0] <= s), default=None)
+                if k is None or (lab and k <= lab[-1][0]):
+                    continue
+                if cur == 'C파':
+                    pc = lab[-1][0]
+                    if H(k) < H(pc):
+                        continue                               # C파 하락 안의 반등
+                    lab += [(bottom(pc + 1, k - 1), '1파'), (k, '2파')] if k - 1 > pc else []
+                    continue
+                lab.append((k, 'A파'))
+    fill(N)
     return sorted(lab)
 
 
