@@ -268,6 +268,10 @@ def elliott(bars, score, brk, sgn, N):
             if not ok(nx, i):
                 if nx == '5파' and recount(i):
                     continue
+                if nx == 'C파':                              # B 반등이 A 고점을 넘음 → A파 시작을 새 꼭지로 옮김
+                    cut(last('A파'))
+                    lab.append((i, 'A파'))
+                    continue
                 break
             if nx == 'A파':
                 put_a(i)
@@ -323,6 +327,10 @@ def elliott(bars, score, brk, sgn, N):
                 lab.pop()                                  # 실패한 상승 시도(시작점 아래로 되밀림)는 라벨 제거, 교대 유지
             if lab and lab[-1][1] == 'A파':                # A파 뒤 바로 새 상승 → 사이 4% 피벗으로 B·C 보충
                 pa = lab[-1][0]
+                if first - 1 > pa:
+                    t2 = top(pa, first - 1)                    # A파 시작 = 새 상승 전까지의 실제 꼭지
+                    if t2 != pa:
+                        lab[-1] = (t2, 'A파'); pa = t2
                 b_ = next((p[0] for p in Z4 if p[1] == 'L' and pa + 2 < p[0] < first - 3), None)
                 c = next((p[0] for p in Z4 if b_ is not None and p[1] == 'H' and b_ + 2 < p[0] < first - 2), None)
                 if c is not None and ok('C파', c):

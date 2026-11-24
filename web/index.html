@@ -596,7 +596,9 @@ const waveLab=(()=>{const lab=[],Hh=i=>bars[i].high,Ll=i=>bars[i].low;
       if(t===(WTOP.has(n0)?'H':'L')){if((t==='H'?Hh(i)>Hh(i0):Ll(i)<Ll(i0))&&ok(n0,i))lab[lab.length-1]=[i,n0];continue}
       if(i-i0<2)continue;
       const nx=WSEQ[WSEQ.indexOf(n0)+1];
-      if(!ok(nx,i)){if(nx==='5파'&&recount(i))continue;break}
+      if(!ok(nx,i)){if(nx==='5파'&&recount(i))continue;
+        if(nx==='C파'){cut(last('A파'));lab.push([i,'A파']);continue}   // B 반등이 A 고점을 넘음 → A파 시작을 새 꼭지로
+        break}
       if(nx==='A파')putA(i);else lab.push([i,nx]);}};
   let lastS=-99;
   for(let s=30;s<N;s++){if(score[s]==null||score[s]<2||!brk[s])continue;
@@ -621,7 +623,8 @@ const waveLab=(()=>{const lab=[],Hh=i=>bars[i].high,Ll=i=>bars[i].low;
       if(lab.length&&lt()[1]==='B파'){const b0=lt()[0],c=first-1>b0?top(b0+1,first-1):null;  // B 뒤 새 상승 → 사이 고점 = C파
         if(c!=null&&ok('C파',c)&&first-c>=2&&c-b0>=3)lab.push([c,'C파']);else lab.pop();}
       while(lab.length&&(['1파','2파','3파','4파'].includes(lt()[1])||!WTOP.has(lt()[1])))lab.pop(); // 실패한 상승 시도 제거·교대 유지
-      if(lab.length&&lt()[1]==='A파'){const pa=lt()[0];   // A파 뒤 바로 새 상승 → 사이 4% 피벗으로 B·C 보충
+      if(lab.length&&lt()[1]==='A파'){let pa=lt()[0];   // A파 뒤 바로 새 상승 → 사이 4% 피벗으로 B·C 보충
+        if(first-1>pa){const t2=top(pa,first-1);if(t2!==pa){lab[lab.length-1]=[t2,'A파'];pa=t2}}   // A파 시작 = 새 상승 전까지의 실제 꼭지
         const b=Z4.find(p=>p.t==='L'&&p.i>pa+2&&p.i<first-3),c=b&&Z4.find(p=>p.t==='H'&&p.i>b.i+2&&p.i<first-2);
         if(c&&ok('C파',c.i))lab.push([b.i,'B파'],[c.i,'C파']);}
       lab.push(...pts);
