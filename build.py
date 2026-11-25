@@ -414,11 +414,11 @@ def main():
     ap.add_argument('--limit', type=int, default=0, help='시험용: 시장별 종목 수 제한')
     ap.add_argument('--markets', default='KR,US')
     ap.add_argument('--days', type=int, default=730)
-    ap.add_argument('--ldays', type=int, default=3650, help='엘리엇 주봉 등급(프라이머리·사이클)용 장기 기간')
+    ap.add_argument('--lstart', default='2000-01-01', help='엘리엇 주봉 등급(프라이머리·사이클)용 장기 시작일(고정 — 시작점에 따라 큰 등급 라벨이 바뀌지 않게, 국내는 자료원 한도 약 12년)')
     a = ap.parse_args()
     start = (dt.date.today() - dt.timedelta(days=a.days)).isoformat()
     global LSTART
-    LSTART = (dt.date.today() - dt.timedelta(days=a.ldays)).isoformat()
+    LSTART = a.lstart
     out = a.out
     if os.path.isdir(out):
         shutil.rmtree(out)
