@@ -493,7 +493,10 @@ def main():
         it['f'] = f'{mk}/{fn}'
         write_bars(os.path.join(out, 'data', 'p', mk, fn + '.json'), b, 0 if mk == 'KR' else 2, EW.get(it['id']))
         it.update(sm)
-        it['wv'] = EW[it['id']]['cur'] if it['id'] in EW else []   # 등급별 현재 파동 [[등급, 표기, 시작일]] (큰 등급 먼저)
+        it['wv'] = EW[it['id']]['cur'] if it['id'] in EW else []
+        if mk == 'SEC':          # 섹터 순위 변동용: 1·5·20거래일 전 부호ADX (오늘 sa 와 같은 계산)
+            L = len(b) - 1
+            it['sah'] = [round(r['sgn'](L - k), 1) if L - k >= 0 and r['adx'][L - k] is not None else None for k in (1, 5, 20)]   # 등급별 현재 파동 [[등급, 표기, 시작일]] (큰 등급 먼저)
         if mk == 'IX':
             it['sp'] = [round(x['close'], 4) for x in b[-60:]]  # 홈 미니 차트
         if mk in ('KR', 'US') and it['m'] != 'ETF':

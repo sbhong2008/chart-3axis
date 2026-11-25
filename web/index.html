@@ -60,6 +60,7 @@ tbody tr{cursor:pointer}tbody tr:hover{background:#1a2130}
 .st.bull{background:#0d3a24;color:#3ee08f}.st.bear{background:#3d1515;color:#ff6b6b}.st.side{background:#262b35;color:#aab1bd}
 .secs{display:grid;grid-template-columns:1fr 1fr;gap:14px;max-width:1200px}
 .secs table{min-width:0}.secs td,.secs th{padding:5px 6px}
+td.rk{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}td.rk small{margin-left:3px;font-size:10px}td.rk small.big{font-weight:700;font-size:11px}
 .bb{display:flex;width:90px;height:8px;border-radius:3px;overflow:hidden;background:#222}
 .bb i{display:block;height:100%}
 tr.det>td{background:#12161d;white-space:normal;text-align:left;cursor:default}
@@ -154,7 +155,8 @@ tr.det>td{background:#12161d;white-space:normal;text-align:left;cursor:default}
     <div><div class="grp">미국 섹터 <small class="muted">(섹터지수 부호ADX 순 · 누르면 대장주·대세주)</small></div><div class="tw" style="max-height:none"><table id="hUS"></table></div></div>
   </div>
   <div class="desc" style="margin-top:8px">강세 = ADX≥20·+DI 우세, 약세 = ADX≥20·−DI 우세, 횡보 = ADX&lt;20 (괄호: 강=ADX≥25, 초기=20~25, 응축=스퀴즈). VIX·달러·금리·환율은 상승이 '위험 회피' 쪽 신호입니다.
-  대장주 = 섹터 내 시가총액 상위(미국은 20일 평균 거래대금 상위로 대체). 대세주 = 강세 국면이면서 20일·60일 수익률이 모두 플러스인 종목 중 60일 수익률 상위(데이터 이상 종목 제외).</div>
+  대장주 = 섹터 내 시가총액 상위(미국은 20일 평균 거래대금 상위로 대체). 대세주 = 강세 국면이면서 20일·60일 수익률이 모두 플러스인 종목 중 60일 수익률 상위(데이터 이상 종목 제외).
+  순위 = 섹터지수 부호ADX 순. 어제·1주·1달 = 1·5·20거래일 전 같은 기준의 순위와 지금까지 이동(▲ 올라옴 · ▼ 내려감 · 5계단 이상 굵게). 상태 표시이며 예측 아님.</div>
 </section>
 <section id="V" class="view"><div id="vbody" class="desc">검증 데이터를 불러오는 중…</div></section>
 <section id="S" class="view">
@@ -318,14 +320,19 @@ function secRows(mk){const secs={};U.filter(it=>it.id.startsWith(mk+':')&&it.m!=
   return Object.entries(secs).map(([s,l])=>{const si=U.find(it=>it.id.startsWith('SEC:'+mk)&&it.s===s);const n=l.length;
     const up=l.filter(it=>it.rg.endsWith('↑')).length/n*100,dn=l.filter(it=>it.rg.endsWith('↓')).length/n*100;
     return{s,n,up,dn,si}}).sort((a,b)=>(b.si?.sa??-999)-(a.si?.sa??-999));}
+// 순위 변동: 1·5·20거래일 전 부호ADX(sah)로 그날 순위를 다시 매겨 지금 순위와 비교(▲ = 올라옴)
+function rankAt(rows,j){const v=rows.filter(r=>r.si&&r.si.sah&&r.si.sah[j]!=null).sort((a,b)=>b.si.sah[j]-a.si.sah[j]);const m={};v.forEach((r,i)=>m[r.s]=i+1);return m}
+function rkCell(now,past){if(past==null)return'<td class="rk muted">-</td>';const d=past-now;
+  return`<td class="rk" title="그때 ${past}위 → 지금 ${now}위">${past}<small class="${d>0?'up':d<0?'dn':'muted'}${Math.abs(d)>=5?' big':''}">${d>0?'▲'+d:d<0?'▼'+(-d):'–'}</small></td>`}
 function drawSecTable(mk){const t=document.getElementById('h'+mk);const rows=secRows(mk);
-  t.innerHTML='<thead><tr><th>섹터</th><th>상태</th><th>20일</th><th>상승·횡보·하락 비율</th><th>종목</th></tr></thead><tbody>'+
-   rows.map(r=>`<tr data-s="${r.s}"><td>${r.s}</td><td>${r.si?stBadge(r.si):'-'}</td><td>${r.si?pc(r.si.r20):'-'}</td>
+  const RK=[0,1,2].map(j=>rankAt(rows,j)),NOW={};rows.filter(r=>r.si).forEach((r,i)=>NOW[r.s]=i+1);
+  t.innerHTML='<thead><tr><th>섹터</th><th title="섹터지수 부호ADX 순">순위</th><th title="1거래일 전 순위 · 지금까지 이동">어제</th><th title="5거래일 전 순위 · 지금까지 이동">1주</th><th title="20거래일 전 순위 · 지금까지 이동">1달</th><th>상태</th><th>20일</th><th>상승·횡보·하락 비율</th><th>종목</th></tr></thead><tbody>'+
+   rows.map(r=>`<tr data-s="${r.s}"><td>${r.s}</td><td class="rk"><b>${NOW[r.s]??'-'}</b></td>${RK.map(m=>NOW[r.s]?rkCell(NOW[r.s],m[r.s]):'<td class="rk muted">-</td>').join('')}<td>${r.si?stBadge(r.si):'-'}</td><td>${r.si?pc(r.si.r20):'-'}</td>
     <td><div class="bb" title="상승 ${r.up.toFixed(0)}% · 하락 ${r.dn.toFixed(0)}%"><i style="width:${r.up}%;background:#26c88c"></i><i style="width:${100-r.up-r.dn}%;background:#555c68"></i><i style="width:${r.dn}%;background:#ff5252"></i></div></td><td>${r.n}</td></tr>`).join('')+'</tbody>';
   t.querySelectorAll('tbody tr[data-s]').forEach(tr=>tr.onclick=()=>{const nx=tr.nextElementSibling;
     if(nx&&nx.classList.contains('det')){nx.remove();return}
     const s=tr.dataset.s,si=U.find(it=>it.id.startsWith('SEC:'+mk)&&it.s===s);const d=document.createElement('tr');d.className='det';
-    d.innerHTML=`<td colspan="5"><div class="lists"><div><h4>대장주 <small class="muted">${mk==='KR'?'시가총액 순':'거래대금 순'}</small></h4>${miniTab(leaders(mk,s))}</div>
+    d.innerHTML=`<td colspan="9"><div class="lists"><div><h4>대장주 <small class="muted">${mk==='KR'?'시가총액 순':'거래대금 순'}</small></h4>${miniTab(leaders(mk,s))}</div>
       <div><h4>대세주 <small class="muted">강세 국면 · 20·60일 상승 · 60일 수익률 순</small></h4>${miniTab(trenders(mk,s))}</div></div>
       <div style="margin-top:6px">${si?`<a class="lk" onclick="go('${si.id}')">섹터지수 차트</a> · `:''}<a class="lk" onclick="document.getElementById('smk').value='${mk}';fillSectors();document.getElementById('ssec').value='${s}';showTab('S')">섹터 전체 종목</a></div></td>`;
     tr.after(d);});}
