@@ -33,7 +33,8 @@ INDICES = [
     ('HSCE', 'yf', '^HSCE', '항셍 H주(HSCEI)', '중국'),
     ('ACWI', 'yf', 'ACWI', 'MSCI 전세계(ACWI ETF)', '글로벌'), ('SX5E', 'yf', '^STOXX50E', '유로스톡스50', '글로벌'),
     ('DAX', 'yf', '^GDAXI', '독일 DAX', '글로벌'), ('VIX', 'yf', '^VIX', 'VIX 변동성', '글로벌'), ('DXY', 'yf', 'DX-Y.NYB', '달러인덱스', '글로벌'),
-    ('TNX', 'yf', '^TNX', '미국 10년 금리', '글로벌'), ('GOLD', 'yf', 'GC=F', '금 선물', '글로벌'), ('WTI', 'yf', 'CL=F', 'WTI 원유', '글로벌'),
+    ('TNX', 'yf', '^TNX', '미국 10년 금리', '글로벌'), ('GOLD', 'yf', 'GC=F', '금 선물', '글로벌'), ('GLD', 'yf', 'GLD', '금 현물(GLD ETF)', '글로벌'),
+    ('WTI', 'yf', 'CL=F', 'WTI 원유', '글로벌'),
     ('BTC', 'yf', 'BTC-USD', '비트코인', '글로벌'),
 ]
 
