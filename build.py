@@ -18,6 +18,7 @@ import FinanceDataReader as fdr
 import yfinance as yf
 
 from indicators import summary, forward_stats, BULL, BEAR
+import elliott
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -175,6 +176,20 @@ def us_universe():
 
 
 # ---------- 시세 ----------
+EW = {}      # id → 엘리엇 다층 파동(elliott.analyze)
+LSTART = None  # 장기(주봉 등급용) 시작일 — main 에서 설정
+
+
+def keep(k, b, start):
+    """장기 일봉 b 로 엘리엇(일봉 2년 + 주봉 10년 등급)을 계산하고, 화면용 기간(start~)만 돌려줌."""
+    d = [x for x in b if x['time'] >= start]
+    try:
+        EW[k] = elliott.analyze(d, b)
+    except Exception as e:
+        log('엘리엇 실패', k, e)
+    return d
+
+
 def fetch_fdr(pairs, start, label):
     """pairs: [(id, fdr심볼)]"""
     res = {}
@@ -183,7 +198,7 @@ def fetch_fdr(pairs, start, label):
         err = None
         for k in range(3):
             try:
-                return p[0], to_bars(fdr.DataReader(p[1], start))
+                return p[0], to_bars(fdr.DataReader(p[1], LSTART or start))
             except Exception as e:
                 err = e; time.sleep(1 + k * 2)
         log(label, '실패', p[1], err)
@@ -191,7 +206,7 @@ def fetch_fdr(pairs, start, label):
 
     with ThreadPoolExecutor(8) as ex:
         for n, f in enumerate(as_completed([ex.submit(one, p) for p in pairs]), 1):
-            k, b = f.result(); res[k] = b
+            k, b = f.result(); res[k] = keep(k, b, start)
             if n % 500 == 0:
                 log(f'{label} {n}/{len(pairs)}')
     return res
@@ -204,12 +219,12 @@ def fetch_yf(pairs, start, label, chunk=100):
         part = pairs[k:k + chunk]
         syms = [s for _, s in part]
         try:
-            df = yf.download(syms, start=start, group_by='ticker', auto_adjust=True, threads=True, progress=False)
+            df = yf.download(syms, start=LSTART or start, group_by='ticker', auto_adjust=True, threads=True, progress=False)
         except Exception as e:
             log(label, '묶음 실패', e); continue
         for i, s in part:
             try:
-                res[i] = to_bars(df[s].dropna(how='all')) if len(syms) > 1 else to_bars(df.dropna(how='all'))
+                res[i] = keep(i, to_bars(df[s].dropna(how='all')) if len(syms) > 1 else to_bars(df.dropna(how='all')), start)
             except Exception:
                 res[i] = []
         log(f'{label} {min(k + chunk, len(pairs))}/{len(pairs)}')
@@ -326,12 +341,14 @@ def sector_index(member_bars):
     return out
 
 
-def write_bars(path, bars, digits):
+def write_bars(path, bars, digits, ew=None):
     r = (lambda x: round(x, digits)) if digits else (lambda x: int(round(x)))
     obj = {'t': [b['time'] for b in bars], 'o': [r(b['open']) for b in bars], 'h': [r(b['high']) for b in bars],
            'l': [r(b['low']) for b in bars], 'c': [r(b['close']) for b in bars], 'v': [int(b['volume']) for b in bars]}
     if any('sr' in b for b in bars):
         obj['sr'] = [b.get('sr') for b in bars]
+    if ew:
+        obj['ew'] = ew
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, 'w') as f:
         json.dump(obj, f, separators=(',', ':'), ensure_ascii=False)
@@ -397,8 +414,11 @@ def main():
     ap.add_argument('--limit', type=int, default=0, help='시험용: 시장별 종목 수 제한')
     ap.add_argument('--markets', default='KR,US')
     ap.add_argument('--days', type=int, default=730)
+    ap.add_argument('--ldays', type=int, default=3650, help='엘리엇 주봉 등급(프라이머리·사이클)용 장기 기간')
     a = ap.parse_args()
     start = (dt.date.today() - dt.timedelta(days=a.days)).isoformat()
+    global LSTART
+    LSTART = (dt.date.today() - dt.timedelta(days=a.ldays)).isoformat()
     out = a.out
     if os.path.isdir(out):
         shutil.rmtree(out)
@@ -455,6 +475,7 @@ def main():
             continue
         sid = f'SEC:{mk}{n}'
         bars[sid] = sector_index([bars[i] for i in ids])
+        EW[sid] = elliott.analyze(bars[sid])
         items.append({'id': sid, 'n': f'[섹터지수] {sname}', 'm': f'{mk} 섹터', 's': sname, 'k': len(ids)})
 
     # 4) 요약·검증·쓰기
@@ -470,8 +491,9 @@ def main():
             continue
         fn = re.sub(r'[^A-Za-z0-9.\-]', '_', code)
         it['f'] = f'{mk}/{fn}'
-        write_bars(os.path.join(out, 'data', 'p', mk, fn + '.json'), b, 0 if mk == 'KR' else 2)
+        write_bars(os.path.join(out, 'data', 'p', mk, fn + '.json'), b, 0 if mk == 'KR' else 2, EW.get(it['id']))
         it.update(sm)
+        it['wv'] = EW[it['id']]['cur'] if it['id'] in EW else []   # 등급별 현재 파동 [[등급, 표기, 시작일]] (큰 등급 먼저)
         if mk == 'IX':
             it['sp'] = [round(x['close'], 4) for x in b[-60:]]  # 홈 미니 차트
         if mk in ('KR', 'US') and it['m'] != 'ETF':

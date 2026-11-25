@@ -109,7 +109,7 @@ tr.det>td{background:#12161d;white-space:normal;text-align:left;cursor:default}
     <span><i class="sw" style="background:#ffa726"></i>BB 선 주황 = 스퀴즈</span>
     <span><i class="sw" style="background:rgb(38,200,140)"></i><i class="sw" style="background:rgb(255,82,82)"></i>거래량 양봉/음봉 (진할수록 평균 대비 큼)</span>
     <span>▲★3/▲2 상승 돌파 · ▲투매 = 하단 이탈+거래량(역발상 매수) · ▼꺾임 = 과열 추세 꺾임 · ▼경고 = 고점 다이버전스 · ■분산 = 고점 대량 매도 · ■매집 = 저점 대량 매수</span>
-    <span><b style='color:#ffd54f'>●1~5파</b> / <b style='color:#ce93d8'>●A~C파</b> / <b style='color:#f48fb1'>●X·Y파</b>(복합 조정) = 엘리엇 대응 파동 시작점(자동 추정, 3대 규칙 적용)</span>
+    <span>엘리엇 파동(끝점 표기 · 상승 5개 → 상위 1개, 조정 3개 → 상위 1개 · 매 빌드 재계산 · '→ x 진행' = 현재 파동): <span id="degsel"></span></span>
     <span>조짐(오닐): <i class="sw" style="background:#ffd600"></i>노랑·■처닝 = 상승 고점권에서 1~3일 거래량 증가인데 가격 제자리(−1~+0.5%) · <i class="sw" style="background:#ff9800"></i>주황 = 분산일(0.2%↓ 하락 + 전일보다 거래 많음, 처닝 중이면 진주황) · <i class="sw" style="background:#ff1744"></i>빨강·▼대분산 = 처닝 뒤 10일 안 장중 신고가인데 전일보다 낮게 마감(대규모 분산) · ■분산일5 = 4주 안 분산일 5회 · 헤더 '분산일 n/4주' 3회↑ 노랑(보유 재평가) · ●과열 = 20일 +20% 급등 뒤 3배 거래 클라이맥스 · ▼공매 = 공매도 비중 급증(40일 평균+2σ·1.25배↑, 미국 FINRA·국내 KRX, 최근 6개월)</span>
   </div>
   <div class="legend">ADX 표시:
@@ -141,7 +141,7 @@ tr.det>td{background:#12161d;white-space:normal;text-align:left;cursor:default}
   </div>
   <div class="ctl"><button class="tab cunit" data-u="day">일 단위</button><button class="tab cunit" data-u="week">주 단위</button><button class="tab" id="play">▶ 재생</button><select id="speed" class="tab"><option value="0.5">아주 느리게</option><option value="1" selected>느리게</option><option value="2">보통</option><option value="4">빠르게</option></select><input type="range" id="scrub"><span class="info" id="infoC"></span></div>
   <canvas id="sc"></canvas>
-  <div class="pt" style="max-width:960px">가격 + BB + 추세 리본(20일선 색 = ADX 국면) · 밝은 세로 띠 = 선택한 날, 옅은 띠 = 궤적 기간 · 차트 클릭 시 해당 날짜로 이동 · <b style='color:#ffd54f'>●1~5파</b>/<b style='color:#ce93d8'>●A~C파</b> = 엘리엇 대응 파동 시작점(자동 추정)</div>
+  <div class="pt" style="max-width:960px">가격 + BB + 추세 리본(20일선 색 = ADX 국면) · 밝은 세로 띠 = 선택한 날, 옅은 띠 = 궤적 기간 · 차트 클릭 시 해당 날짜로 이동 · 엘리엇 파동 = A 통합과 같은 등급 표시</div>
   <div id="c2"></div>
 </section>
 
@@ -207,6 +207,20 @@ const verdictOf=(id,key)=>{const mk=mkOf(id);return mk&&VAL?.stats?.[mk]?.sig?.[
 const VCLS={'유효':'ok','약함':'wk','역효과':'ng','보류':'muted'};
 const sigHtml=it=>{if(!it.sig)return'';const k=it.sig[1],v=verdictOf(it.id,k),bear=/분산|경고|꺾임|과열|공매|처닝/.test(k);
   return`<span class="${v==='유효'?(bear?'dn':'up'):'muted'}">${k}</span>${v?` <small class="${VCLS[v]}">${v}</small>`:''}`};
+const DEGC0={'사이클':'#ff8a65','프라이머리':'#f48fb1','인터미디에이트':'#ce93d8','마이너':'#ffd54f','마이뉴트':'#90caf9'};
+const wvTxt=it=>(it.wv||[]).map(([d,l,st])=>`<span style="color:${DEGC0[d]}" title="${d} — ${st}부터">${l}</span>`).join(' ');
+// 엘리엇 표시: 기본 = 일봉 확인용 2등급(마이너·마이뉴트), 버튼으로 큰 3등급(인터미디에이트·프라이머리·사이클)·선 연결 토글 — localStorage 저장
+const DEG_DAY=['마이너','마이뉴트'],DEG_BIG=['사이클','프라이머리','인터미디에이트'];
+const ewOpt=k=>localStorage.getItem(k)==='1';
+const degOn=()=>new Set([...DEG_DAY,...(ewOpt('ewBig')?DEG_BIG:[])]);
+function drawDegSel(){const el=document.getElementById('degsel');if(!el)return;
+  const sw=(d,x)=>`<b style="color:${DEGC0[d]}">●${d}</b> <small class="muted">${x}</small>`;
+  el.innerHTML=`${sw('마이너','I~V·A~C')} ${sw('마이뉴트','1~5·a~c')}
+    <button class="tab ${ewOpt('ewBig')?'on':''}" id="ewBig" title="인터미디에이트 (I)·프라이머리 ①·사이클 cI">큰 파동 3등급 ${ewOpt('ewBig')?'숨기기':'보기'}</button>
+    <button class="tab ${ewOpt('ewLine')?'on':''}" id="ewLine" title="파동 꺾임점을 등급별 색 선으로 연결">파동 선 ${ewOpt('ewLine')?'끄기':'연결'}</button>
+    ${ewOpt('ewBig')?' '+sw('인터미디에이트','(I)·(A)')+' '+sw('프라이머리','①·Ⓐ')+' '+sw('사이클','cI·cA'):''}`;
+  const t=k=>()=>{localStorage.setItem(k,ewOpt(k)?'0':'1');drawDegSel();window.__applyWaves&&window.__applyWaves()};
+  document.getElementById('ewBig').onclick=t('ewBig');document.getElementById('ewLine').onclick=t('ewLine');}
 const pathOf=it=>`${DATA}p/${it.f}.json`;
 const RG_COL={'응축':'#c99a00','횡보':'#555c68','추세시작↑':'#2e9d63','강한추세↑':'#00c46a','추세시작↓':'#b85454','강한추세↓':'#e53935'};
 const rgBadge=r=>`<span class="badge" style="background:${RG_COL[r]||'#333'}33;color:${RG_COL[r]||'#ccc'}">${r}</span>`;
@@ -278,8 +292,8 @@ function drawSector(){if(!U.length)return;const mk=document.getElementById('smk'
   const key={sig:it=>it.sig?it.sig[0]+(it.sig[1].startsWith('★')?'9':'5'):'',sc:it=>it.sc*1000+it.sa,sa:it=>it.sa,'sa-':it=>-it.sa,ch:it=>it.ch,bwp:it=>-it.bwp,n:it=>it.n}[sort];
   l=[...l].sort((a,b)=>{const x=key(a),y=key(b);return sort==='n'?String(x).localeCompare(y):(x<y?1:x>y?-1:0)}).slice(0,400);
   const sigTxt=it=>it.sig?`${sigHtml(it)} <small class="muted">${it.sig[0].slice(5)}</small>`:'';
-  tab.innerHTML='<thead><tr><th>종목</th><th>종가</th><th>등락%</th><th>국면</th><th>점수</th><th>부호ADX</th><th>BB폭%ile</th><th>거래량배</th><th>최근 신호(10일)</th><th>현재 파동(시작)</th></tr></thead><tbody>'+
-    l.map(it=>`<tr data-id="${it.id}"><td>${it.n} <small class="muted">${it.id.split(':')[1]}</small></td><td>${fmtP(it.c)}</td><td class="${it.ch>=0?'up':'dn'}">${it.ch.toFixed(2)}</td><td>${rgBadge(it.rg)}</td><td>${it.sc}</td><td class="${it.sa>=0?'up':'dn'}">${it.sa}</td><td>${it.bwp}</td><td>${it.vr}</td><td>${sigTxt(it)}</td><td>${it.wv?it.wv[1]+' <small class="muted">'+it.wv[0].slice(2)+'</small>':''}</td></tr>`).join('')+'</tbody>';
+  tab.innerHTML='<thead><tr><th>종목</th><th>종가</th><th>등락%</th><th>국면</th><th>점수</th><th>부호ADX</th><th>BB폭%ile</th><th>거래량배</th><th>최근 신호(10일)</th><th title="큰 등급부터: 사이클·프라이머리(주봉 10년) / 인터미디에이트·마이너·마이뉴트(일봉 2년)">현재 파동(큰→작은 등급)</th></tr></thead><tbody>'+
+    l.map(it=>`<tr data-id="${it.id}"><td>${it.n} <small class="muted">${it.id.split(':')[1]}</small></td><td>${fmtP(it.c)}</td><td class="${it.ch>=0?'up':'dn'}">${it.ch.toFixed(2)}</td><td>${rgBadge(it.rg)}</td><td>${it.sc}</td><td class="${it.sa>=0?'up':'dn'}">${it.sa}</td><td>${it.bwp}</td><td>${it.vr}</td><td>${sigTxt(it)}</td><td>${wvTxt(it)}</td></tr>`).join('')+'</tbody>';
   tab.querySelectorAll('tbody tr').forEach(tr=>tr.onclick=()=>go(tr.dataset.id));}
 document.getElementById('smk').onchange=()=>{fillSectors();drawSector()};
 ['ssec','ssort','fsig','fsq'].forEach(k=>document.getElementById(k).onchange=drawSector);
@@ -346,7 +360,7 @@ async function drawVal(){const el=document.getElementById('vbody');
     ${['KR','US'].map(mk=>`<div class="grp">${mk==='KR'?'국내':'미국'} — 신호별</div>${tbl(mk,'sig',['★3↑','2↑','투매','매집','꺾임','분산','경고','처닝','대분산','분산일5','과열','공매↑'])}<div class="grp">${mk==='KR'?'국내':'미국'} — 국면별</div>${tbl(mk,'rg',['강세','횡보','약세'])}`).join('')}`;}
 
 // ---------- 차트 (선택 종목) ----------
-function render(bars){
+function render(bars,ew){drawDegSel();
 const N=bars.length,C=bars.map(b=>b.close);
 // ---------- 지표 ----------
 const mid=[],up=[],lo=[],bw=[],sq=[];
@@ -448,7 +462,7 @@ const volColor=i=>{if(bigd[i])return'#ff1744';if(churn[i]&&dday[i])return'#ff6d0
 function hover(ch,el){ch.subscribeCrosshairMove(p=>{const i=p.logical;if(i!=null&&i>=0&&i<N)el.textContent=fmt(Math.round(i))});}
 
 // ---------- A: 통합 오버레이 ----------
-var csA;{const ch=mk('chartA');addBg(ch);bbLines(ch);csA=candles(ch);
+var csA,chA;{const ch=mk('chartA');chA=ch;addBg(ch);bbLines(ch);csA=candles(ch);
  ch.priceScale('right').applyOptions({scaleMargins:{top:.03,bottom:.38}});
  // (1) 부호 ADX 띠: +DI 우세면 위(+), −DI 우세면 아래(−) → 캔들 방향과 같이 움직임
  // DI 차이가 10 이상이면 ±ADX 그대로, 작으면 0 쪽으로 비례 축소 (교차 시 수직 점프 방지)
@@ -559,113 +573,31 @@ scrub.min=0;scrub.max=seq.length-1;scrub.value=seq.length-1;setUnit('day');
 
 
 
-// ---------- 엘리엇 대응 파동 시작점 (지표 앵커 + 지그재그 피벗) ----------
-// 표기 관례: 보통 엘리엇 라벨은 파동 '끝점'에 붙이지만, 여기서는 요청대로 '시작점'에 붙임
-function zigzag(th){const P=[];let dn=0,ei=0;
-  for(let i=1;i<N;i++){const h=bars[i].high,l=bars[i].low;
-    if(dn>=0){if(h>=bars[ei].high){if(!dn)dn=1;ei=i}else if(l<=bars[ei].high*(1-th)){P.push({i:ei,t:'H'});dn=-1;ei=i}}
-    else{if(l<=bars[ei].low)ei=i;else if(h>=bars[ei].low*(1+th)){P.push({i:ei,t:'L'});dn=1;ei=i}}}
-  return P;} // 진행 중(미확정) 마지막 피벗은 제외
-const Z4=zigzag(.04),Z5=zigzag(.05);
-const sgnA=i=>adx[i]==null?0:adx[i]*Math.max(-1,Math.min(1,(pdi[i]-mdi[i])/10));
-// 앞 라벨을 이어받아 1→2→3→4→5→A→B→C 순서와 고점·저점 교대를 지킴 (indicators.py elliott 과 같은 규칙)
-const WSEQ=['1파','2파','3파','4파','5파','A파','B파','C파'],WTOP=new Set(['2파','4파','A파','C파','Y파']);
-// 엘리엇 3대 규칙: 2파 < 1파 시작 금지 · 3파 최단 금지 · 4파의 1파 영역 침범 금지 / 복합 조정 W(A~C)-X-Y
-const waveLab=(()=>{const lab=[],Hh=i=>bars[i].high,Ll=i=>bars[i].low;
-  const last=n=>{for(let k=lab.length-1;k>=0;k--)if(lab[k][1]===n)return lab[k][0];return null};
-  const cut=i=>{while(lab.length&&lab[lab.length-1][0]>=i)lab.pop()};
-  const lt=()=>lab[lab.length-1];
-  const top=(a,b)=>{let t=a;for(let j=a;j<=b;j++)if(Hh(j)>=Hh(t))t=j;return t};      // 같으면 뒤쪽
-  const bottom=(a,b)=>{let t=a;for(let j=a;j<=b;j++)if(Ll(j)<=Ll(t))t=j;return t};
-  const lastPiv=(Z,t,lim)=>{let r=null;for(const p of Z)if(p.t===t&&p.i<lim)r=p;return r};
-  const ok=(n,i)=>{
-    if(n==='5파'){const p1=last('1파'),p2=last('2파');return p2==null||p1==null||p2<p1||Ll(i)>Hh(p2)}  // 4파가 1파 영역 침범 금지
-    if(n==='C파')return Hh(i)<Hh(last('A파'));   // B파 반등이 A파 고점을 넘으면 C파 아님
-    if(n==='3파'){const p1=last('1파');return p1==null||Ll(i)>Ll(p1)}   // 2파가 1파 시작 아래로 금지
-    return true};
-  const putA=i=>{ // 3파가 1·3·5파 중 최단이면 3·4·5를 하나의 연장 3파로 합치고 꼭지 = 4파 시작
-    const [p1,p2,p3,p4,p5]=['1파','2파','3파','4파','5파'].map(last);
-    if([p1,p2,p3,p4,p5].every(x=>x!=null)&&p1<p2&&p2<p3&&p3<p4&&p4<p5){const w1=Hh(p2)-Ll(p1),w3=Hh(p4)-Ll(p3),w5=Hh(i)-Ll(p5);
-      if(w3<w1&&w3<w5){cut(p4);lab.push([i,'4파']);return}}
-    lab.push([i,'A파'])};
-  const recount=i=>{ // 4파 눌림이 1파 영역 침범 → 앞 3·4파를 1·2파로 다시 세고 저점 i = 3파
-    const p3=last('3파'),i4=lt()[0];if(Ll(i)<=Ll(p3)||i-i4<3)return false;
-    const p1=last('1파'),p2=last('2파');cut(p1!=null&&p2!=null&&p1<p2&&p2<p3?p1:p3);
-    lab.push([p3,'1파'],[i4,'2파'],[i,'3파']);return true};
-  const fill=upto=>{ // 5% 지그재그 피벗을 따라 채움: 2거래일 미만 간격은 건너뛰고, 같은 쪽 피벗이 더 극단이면 현재 라벨을 옮김
-    if(!lab.length)return;let k=Z5.findIndex(p=>p.i>lt()[0]);if(k<0)k=Z5.length;
-    while(lab.length&&lt()[1]!=='C파'&&lt()[1]!=='Y파'&&k<Z5.length&&Z5[k].i<upto){const {i,t}=Z5[k];k++;const [i0,n0]=lt();
-      if(t===(WTOP.has(n0)?'H':'L')){if((t==='H'?Hh(i)>Hh(i0):Ll(i)<Ll(i0))&&ok(n0,i))lab[lab.length-1]=[i,n0];continue}
-      if(i-i0<2)continue;
-      const nx=WSEQ[WSEQ.indexOf(n0)+1];
-      if(!ok(nx,i)){if(nx==='5파'&&recount(i))continue;
-        if(nx==='C파'){cut(last('A파'));lab.push([i,'A파']);continue}   // B 반등이 A 고점을 넘음 → A파 시작을 새 꼭지로
-        break}
-      if(nx==='A파')putA(i);else lab.push([i,nx]);}};
-  let lastS=-99;
-  for(let s=30;s<N;s++){if(score[s]==null||score[s]<2||!brk[s])continue;
-    let calm=false;for(let j=s-15;j<s;j++)if(Math.abs(sgnA(j))<20)calm=true;   // 응축/무추세 이후의 돌파만 앵커
-    if(!calm||s-lastS<30)continue;lastS=s;fill(s-15);
-    const cur=lab.length?lt()[1]:null;
-    if(brk[s]>0){ // ---- 상승 앵커
-      const i3=bottom(s-15,s);
-      if(['1파','2파','3파','4파','5파'].includes(cur)&&lt()[0]>=i3)continue;   // 같은 상승의 연장
-      if(cur==='5파')continue;
-      const p3=last('3파');
-      if(cur==='3파'||cur==='4파'){let mn=Infinity;for(let j=p3;j<=s;j++)mn=Math.min(mn,Ll(j));
-        if(mn>=Ll(p3)){const i4=cur==='4파'?lt()[0]:(i3-1>p3?top(p3+1,i3-1):null);
-          if(i4!=null&&i3-i4>=3&&ok('5파',i3)){cut(p3+1);lab.push([i4,'4파'],[i3,'5파']);continue}}}  // 4파 눌림 → 5파
-      if(cur==='1파'&&Ll(i3)>Ll(lt()[0])&&i3-lt()[0]>=6){lab.push([top(lt()[0]+1,i3-1),'2파'],[i3,'3파']);continue}
-      if(cur==='2파'&&Ll(i3)>Ll(last('1파'))&&i3-lt()[0]>=3){lab.push([i3,'3파']);continue}
-      if(cur==='4파'&&recount(i3))continue;
-      const h2=lastPiv(Z4,'H',i3),l1=h2&&lastPiv(Z4,'L',h2.i);
-      const pts=h2&&l1&&Ll(l1.i)<Ll(i3)&&i3-l1.i<=60?[[l1.i,'1파'],[h2.i,'2파'],[i3,'3파']]
-        :[[i3,['A파','B파','C파','Y파'].includes(cur)?'1파':'3파']];
-      const first=pts[0][0];cut(first);
-      if(lab.length&&lt()[1]==='B파'){const b0=lt()[0],c=first-1>b0?top(b0+1,first-1):null;  // B 뒤 새 상승 → 사이 고점 = C파
-        if(c!=null&&ok('C파',c)&&first-c>=2&&c-b0>=3)lab.push([c,'C파']);else lab.pop();}
-      while(lab.length&&(['1파','2파','3파','4파'].includes(lt()[1])||!WTOP.has(lt()[1])))lab.pop(); // 실패한 상승 시도 제거·교대 유지
-      if(lab.length&&lt()[1]==='A파'){let pa=lt()[0];   // A파 뒤 바로 새 상승 → 사이 4% 피벗으로 B·C 보충
-        if(first-1>pa){const t2=top(pa,first-1);if(t2!==pa){lab[lab.length-1]=[t2,'A파'];pa=t2}}   // A파 시작 = 새 상승 전까지의 실제 꼭지
-        const b=Z4.find(p=>p.t==='L'&&p.i>pa+2&&p.i<first-3),c=b&&Z4.find(p=>p.t==='H'&&p.i>b.i+2&&p.i<first-2);
-        if(c&&ok('C파',c.i))lab.push([b.i,'B파'],[c.i,'C파']);}
-      lab.push(...pts);
-    }else{ // ---- 하락 앵커
-      if(['1파','3파','4파','5파'].includes(cur)){const st=lt()[0],T=top(st,s);if(T===st)continue;
-        if(cur==='1파'){lab.push([T,'2파']);continue}
-        if(cur==='3파'){let best=null;   // 꼭지 전 가장 깊은 눌림(3%↑)을 4·5파로
-          for(let a=st+3;a<T-3;a++){const b=bottom(a+1,T-2),dd=1-Ll(b)/Hh(a);
-            if(dd>=.03&&Hh(a)>Hh(st)&&ok('5파',b)&&(!best||dd>best[0]))best=[dd,a,b];}
-          if(!best){lab.push([T,'4파']);continue}
-          lab.push([best[1],'4파'],[best[2],'5파']);}
-        else if(cur==='4파'){const b=T-1>st?bottom(st+1,T-1):null;if(b==null||!ok('5파',b))continue;lab.push([b,'5파']);}
-        putA(T);   // 상승 5파 뒤 꼭지 = A파 시작(3파 최단이면 4파)
-      }else if(cur==='2파'){const p1=last('1파');let mn=Infinity;for(let j=lt()[0];j<=s;j++)mn=Math.min(mn,Ll(j));
-        if(mn>=Ll(p1))continue;cut(p1);   // 1파 시작 아래로 → 상승 실패, 앞 조정으로 복귀
-        if(!lab.length)lab.push([top(Math.max(0,s-60),s),'A파']);
-        else if(!WTOP.has(lt()[1])){const nx=WSEQ[WSEQ.indexOf(lt()[1])+1],T=top(lt()[0]+1,s);if(ok(nx,T))lab.push([T,nx]);}
-      }else if(cur==='B파'){const pa=last('A파'),pb=lt()[0];if(s-pb<2)continue;const T=top(pb+1,s);if(T-pb<2)continue;   // B파 반등 고점 → C파(또는 A파 이동)
-        if(Hh(T)>=Hh(pa)){cut(pa);lab.push([T,'A파'])}else lab.push([T,'C파']);
-      }else if(cur==='A파'){const pa=last('A파'),T=top(pa,s);if(T===pa)continue;
-        if(Hh(T)>=Hh(pa)){cut(pa);lab.push([T,'A파'])}   // A파 고점 갱신 → 꼭지 이동
-        else{const b=T-1>pa?bottom(pa+1,T-1):null;if(b==null||T-b<3||b-pa<3)continue;cut(pa+1);lab.push([b,'B파'],[T,'C파']);}
-      }else if(cur==='X파'){continue
-      }else{const kp=lastPiv(Z4,'H',s+1);if(!kp||(lab.length&&kp.i<=lt()[0]))continue;const k=kp.i;
-        if(cur==='C파'||cur==='Y파'){const pc=lt()[0];
-          if(Hh(k)<Hh(pc)){const pa=last('A파'),pb=last('B파');
-            if(cur==='C파'&&k-pc>6&&pa!=null&&pb!=null){const x=bottom(pc+1,k-1),y=k>x?top(x+1,k):null;   // y = X 반등의 실제 꼭지
-              // 복합 조정: C파가 A파 길이의 61.8%↑ 진행 → 4%↑ 반등(X) → 다시 하락 이탈 = Y파
-              if(y!=null&&Hh(y)<Hh(pc)&&Hh(pc)-Ll(x)>=.618*(Hh(pa)-Ll(pb))&&Hh(y)>=Ll(x)*1.04&&y-x>=3&&x-pc>=3)lab.push([x,'X파'],[y,'Y파']);}
-            continue;}   // 그 밖에는 C(Y)파 하락 안의 반등
-          if(k-1>pc)lab.push([bottom(pc+1,k-1),'1파'],[k,'2파']);continue;}
-        lab.push([k,'A파']);}
-    }}
-  fill(N);return lab.sort((a,b)=>a[0]-b[0]);})();
-// 2·4·A·C파는 고점에서 시작(위), 1·3·5·B파는 저점에서 시작(아래) — 하락 앵커의 A·B·C도 같은 배치
-const waveMarkers=waveLab.map(([i,L])=>{const top=/^(2|4|A|C|Y)/.test(L);
-  return{time:bars[i].time,position:top?'aboveBar':'belowBar',shape:'circle',color:/^[XY]/.test(L)?'#f48fb1':/^[A-C]/.test(L)?'#ce93d8':'#ffd54f',text:L};});
-const allMarkers=[...markers,...waveMarkers].sort((a,b)=>a.time<b.time?-1:1);
-csA.setMarkers(allMarkers); // A 통합 오버레이에도 같은 마커(신호 + 엘리엇 대응) 적용
+// ---------- 엘리엇 파동 (다층·프랙탈: 빌드의 elliott.py 가 매 빌드 처음부터 다시 셈, 여기서는 표시만) ----------
+// 라벨 = 파동 끝점(상승 끝 = 고점 위, 하락 끝 = 저점 아래). 진행 중 파동은 앞 파동 끝점에 '→ x 진행'
+const DEGC={'사이클':'#ff8a65','프라이머리':'#f48fb1','인터미디에이트':'#ce93d8','마이너':'#ffd54f','마이뉴트':'#90caf9'};
+const firstT=bars[0].time,dayIdx=new Map(bars.map((b,i)=>[b.time,i]));
+const snapT=t=>{if(dayIdx.has(t))return t;const b=bars.find(x=>x.time>=t);return b?b.time:null};
+function waveMarkersOf(){const on=degOn(),out=[];
+  for(const [deg,legs] of (ew?.lv||[])){if(!on.has(deg))continue;const col=DEGC[deg]||'#ffd54f';let prev=null;
+    for(const [e,lab,live,st,up] of legs){
+      if(live){if(prev)prev.text+=` → ${lab} 진행`;else{const t=snapT(st);if(t&&st>=firstT)out.push({time:t,position:up?'belowBar':'aboveBar',shape:'circle',color:col,text:`→ ${lab} 진행`})}continue}
+      const t=e>=firstT?snapT(e):null;
+      prev=t?{time:t,position:up?'aboveBar':'belowBar',shape:'circle',color:col,text:lab}:null;if(prev)out.push(prev);}}
+  return out}
+let c2c=null;
+let ewLines=[];
+function waveLines(){ewLines.forEach(x=>chA.removeSeries(x));ewLines=[];if(!ewOpt('ewLine'))return;const on=degOn();
+  for(const [deg,legs] of (ew?.lv||[])){if(!on.has(deg))continue;const pts=new Map();
+    const put=(t,up)=>{if(!t||t<firstT)return;const tt=snapT(t);if(!tt)return;const b=bars[dayIdx.get(tt)];pts.set(tt,up?b.high:b.low)};
+    legs.forEach(([e,lab,live,st,up],k)=>{if(k===0)put(st,!up);put(e,!!up)});   // 시작점(첫 파동) + 각 파동 끝점(진행 중이면 지금까지의 극점)
+    const data=[...pts].sort((a,b)=>a[0]<b[0]?-1:1).map(([time,value])=>({time,value}));if(data.length<2)continue;
+    const big=DEG_BIG.includes(deg);
+    const ln=chA.addLineSeries({color:DEGC[deg],lineWidth:big?3:2,lineStyle:deg==='마이뉴트'?2:0,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
+    ln.setData(data);ewLines.push(ln);}}
+const applyWaves=()=>{const all=[...markers,...waveMarkersOf()].sort((a,b)=>a.time<b.time?-1:1);csA.setMarkers(all);if(c2c)c2c.setMarkers(all);waveLines();return all};
+window.__applyWaves=applyWaves;
+const allMarkers=applyWaves(); // A 통합·C 하단에 신호 + 엘리엇 파동
 
 // ---------- C 하단: 추세 리본 차트 (산점도와 연동) ----------
 var c2=null,c2hl=null;
@@ -677,7 +609,7 @@ function syncC2(P,tr){if(!c2)return;
 {c2=mk('c2');addBg(c2);
  c2hl=c2.addHistogramSeries({priceScaleId:'hl',priceLineVisible:false,lastValueVisible:false});
  c2.priceScale('hl').applyOptions({scaleMargins:{top:0,bottom:0},visible:false});
- bbLines(c2);candles(c2).setMarkers(allMarkers);
+ bbLines(c2);c2c=candles(c2);c2c.setMarkers(allMarkers);
  const rc=i=>{const a=adx[i];if(a==null)return'rgba(0,0,0,0)';const u=pdi[i]>mdi[i];
    return a<20?'rgba(160,160,160,.55)':u?(a>=25?'rgba(0,230,118,.95)':'rgba(0,230,118,.5)'):(a>=25?'rgba(255,82,82,.95)':'rgba(255,82,82,.5)');};
  const rib=c2.addLineSeries({lineWidth:5,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
@@ -694,7 +626,7 @@ function syncC2(P,tr){if(!c2)return;
  drawC();}
 
 window.onShowC=()=>requestAnimationFrame(drawC);
-window.__chart={N,bars,adx,pdi,mdi,score,sq,waveLab,markers,ddn,churn,bigd}; // 점검용(파이썬 요약과 대조)
+window.__chart={N,bars,adx,pdi,mdi,score,sq,ew,markers,ddn,churn,bigd}; // 점검용(파이썬 요약과 대조)
 
 }
 
@@ -717,14 +649,14 @@ window.__chart={N,bars,adx,pdi,mdi,score,sq,waveLab,markers,ddn,churn,bigd}; // 
   document.title=`${it.n} · 3축 차트`;
   document.getElementById('tinfo').innerHTML=`<b>${it.n}</b><span class="muted">${it.id.startsWith('SEC')?'':code} · ${it.m}</span>
     <a class="lk" id="tsec">${it.s}</a><span>${it.d} 종가 <b>${fmtP(it.c)}</b> <span class="${it.ch>=0?'up':'dn'}">${it.ch>=0?'+':''}${it.ch}%</span></span>
-    ${rgBadge(it.rg)}<span>점수 ${it.sc} · 부호ADX ${it.sa}</span>${(it.fl||[]).length?`<span class="wk">⚠ ${it.fl.join('·')}</span>`:''}${it.wv?`<span>파동 ${it.wv[1]} (${it.wv[0].slice(2)}~)</span>`:''}${it.dd!=null?`<span class="${it.dd>=3?'wk':''}" title="최근 4주(20거래일) 분산일 수 — 3~5회면 보유 재평가·현금 확보(오닐)">분산일 ${it.dd}/4주</span>`:''}${it.sr!=null?`<span title="거래량 중 공매도 비중 (미국 FINRA 보고분 / 국내 KRX)">공매도 ${it.sr}%</span>`:''}
+    ${rgBadge(it.rg)}<span>점수 ${it.sc} · 부호ADX ${it.sa}</span>${(it.fl||[]).length?`<span class="wk">⚠ ${it.fl.join('·')}</span>`:''}${(it.wv||[]).length?`<span>파동 ${it.wv.map(([d,l,st])=>`<b style="color:${DEGC0[d]||'#ccc'}" title="${d} — ${st}부터 진행">${l}</b>`).join(' ')}</span>`:''}${it.dd!=null?`<span class="${it.dd>=3?'wk':''}" title="최근 4주(20거래일) 분산일 수 — 3~5회면 보유 재평가·현금 확보(오닐)">분산일 ${it.dd}/4주</span>`:''}${it.sr!=null?`<span title="거래량 중 공매도 비중 (미국 FINRA 보고분 / 국내 KRX)">공매도 ${it.sr}%</span>`:''}
     <span class="muted">갱신 ${new Date(UPD).toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}</span>`;
   document.getElementById('tsec').onclick=()=>{document.getElementById('ssec').value=it.s;showTab('S')};
   try{const j=await (await fetch(pathOf(it),{cache:'no-cache'})).json();
     const bars=j.t.map((t,i)=>({time:t,open:j.o[i],high:j.h[i],low:j.l[i],close:j.c[i],volume:j.v[i],...(j.sr&&j.sr[i]!=null?{sr:j.sr[i]}:{})}));
     const mk=mkOf(it.id);SIGV={};if(mk&&VAL?.stats?.[mk]?.sig)for(const[k,x]of Object.entries(VAL.stats[mk].sig))SIGV[k]=x.v;
     document.getElementById('sigv').innerHTML=mk&&VAL?`오늘 검증(${mk==='KR'?'국내':'미국'} 2년·앞뒤 절반): `+Object.entries(SIGV).map(([k,v])=>`${k} <span class="${VCLS[v]}">${v}</span>`).join(' · ')+' — 유효 신호만 원래 색, 약함은 흐리게, 역효과는 회색✕':'지표·지수는 신호 검증 대상이 아닙니다(종목 기준 검증)';
-    document.getElementById('loading').remove();render(bars);}
+    document.getElementById('loading').remove();render(bars,j.ew);}
   catch(e){document.getElementById('loading').textContent='시세를 불러오지 못했습니다: '+e}
 })();
 if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js');
