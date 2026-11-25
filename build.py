@@ -150,7 +150,7 @@ def kr_universe():
         log('시가총액 실패', e); mc = {}
     return [{'id': f"KR:{r.Code}", 'n': r.Name, 'm': 'KOSPI' if r.Market == 'KOSPI' else 'KOSDAQ',
              's': KR_SECTOR_OVERRIDE.get(r.Code) or kr_sector(r.Industry), 'ind': r.Industry if isinstance(r.Industry, str) else '',
-             'mc': int(mc.get(r.Code, 0) or 0) // 100_000_000} for r in d.itertuples()]  # 시가총액(억원)
+             'mc': int(v) // 100_000_000 if (v := mc.get(r.Code)) and v == v else 0} for r in d.itertuples()]  # 시가총액(억원)
 
 
 def us_universe():
