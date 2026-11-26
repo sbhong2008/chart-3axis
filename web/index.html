@@ -36,6 +36,7 @@ header small{color:#7d8590;font-weight:400}
 #sugg small,.muted{color:#7d8590}
 #tinfo{font-size:13px;padding:6px 14px;border-bottom:1px solid #1d2028;display:flex;flex-wrap:wrap;gap:4px 14px;align-items:center}
 #tinfo b{font-size:15px}
+#tsum{font-size:13px;padding:5px 14px 6px;border-bottom:1px solid #1d2028;line-height:1.55;background:#12151b}#tsum:empty{display:none}#tsum b{color:#e8eaed}#tsum .g{color:#7fdca8}#tsum .r{color:#ff8a80}#tsum .y{color:#ffd54f}#tsum small{color:#6b7280}
 .badge{display:inline-block;padding:1px 6px;border-radius:4px;font-size:12px;background:#222833}
 .up{color:#26c88c}.dn{color:#ff5252}
 a.lk{color:#7fb0ff;cursor:pointer;text-decoration:underline}
@@ -98,6 +99,7 @@ tr.det>td{background:#12161d;white-space:normal;text-align:left;cursor:default}
   <button class="tab" id="lockbtn" title="잠금(접속 코드 다시 입력)" onclick="lockNow()">🔒</button>
 </div></header>
 <div id="tinfo"><span class="muted">불러오는 중…</span></div>
+<div id="tsum"></div>
 <div id="loading">데이터를 불러오는 중…</div>
 
 <section id="A" class="view">
@@ -644,6 +646,44 @@ const applyWaves=()=>{const ms=markers.map(m=>({...m,text:''})).sort((a,b)=>a.ti
   csA.setMarkers(ms);if(c2c)c2c.setMarkers(ms);ovs.forEach(f=>f());waveLines();return ms};
 waveOverlay(chA,csA,'chartA');
 window.__applyWaves=applyWaves;
+// ---------- 현재 상황·대응 방향 요약 (매 빌드 데이터로 자동 갱신, 종목 예외 없이 규칙으로만) ----------
+function keyOf(sym){const c='ⒶⒷⒸⒹⒺⓍ'.indexOf(sym);if(c>=0)return 'ABCDEX'[c];const n='①②③④⑤'.indexOf(sym);if(n>=0)return String(n+1);
+  const t=sym.replace(/^c(?=[IVABCDEX])/,'').replace(/[()]/g,'').toUpperCase();return {I:'1',II:'2',III:'3',IV:'4',V:'5'}[t]||t}
+function tsum(){const el=document.getElementById('tsum');if(!el)return;const N=bars.length-1,P=x=>fmtP(x);
+  const px=(d,low)=>{const t=snapT(d);if(!t)return null;const b=bars[dayIdx.get(t)];return low?b.low:b.high};
+  const lv=Object.fromEntries((ew?.lv||[]).map(([d,l])=>[d,l]));
+  const pick=['마이너','인터미디에이트'].find(d=>lv[d]&&lv[d].length&&lv[d][lv[d].length-1][2]);   // 일봉 확인용 주 등급
+  const now=[],act=[];let tone='y';
+  // 추세(ADX)
+  const rg=regimeName(N);now.push(`추세 <b>${rg}</b>(ADX ${adx[N]?.toFixed(0)??'-'})`);
+  // 큰 흐름: 진행 중인 가장 큰 등급
+  const big=(ew?.cur||[])[0];if(big)now.push(`큰 흐름 <b>${big[0]} ${big[1]}</b>(${big[2].slice(2)}~)`);
+  if(pick){const legs=lv[pick],cur=legs[legs.length-1],[,lab,,st,up]=cur,k=keyOf(lab),u=!!up,prev=legs[legs.length-2];
+    const days=N-(dayIdx.get(snapT(st))??N);
+    now.push(`${pick} <b>${prev?prev[1]+' → ':''}${lab} ${u?'상승':'하락'}</b> 진행(${st.slice(5)}~${days<=2?`, ${days}일째·확정 전`:''})`);
+    const ref=(i,low)=>{const L=legs[legs.length-1-i];return L?px(L[3],low):null};
+    const imp='12345'.includes(k),trendUp=imp?(k==='2'||k==='4'?!u:u):null;
+    let m='',r=null;
+    if(imp&&trendUp){
+      if(k==='1'){m='새 상승 1파 초기 — 2파 눌림이 1파 시작가 위에서 멈추는지 확인 후 진입 검토';r=['1파 시작',ref(0,true)];tone='g'}
+      if(k==='2'){m='상승 1파 뒤 2파 눌림 — 1파 시작가를 지키면 3파 대기(가장 흔한 진입 자리)';r=['1파 시작',ref(1,true)];tone='g'}
+      if(k==='3'){m='상승 3파 진행 — 추세 동참 구간';r=['2파 저점',ref(0,true)];tone='g'}
+      if(k==='4'){m='상승 4파 조정 — 1파 고점 위에서 멈추면 5파 대기';r=['1파 고점',legs[legs.length-4]?px(legs[legs.length-4][0],false):null]}
+      if(k==='5'){m='상승 5파 — 막바지, 신규 매수 자제·이익 관리'}}
+    else if(imp){m=k==='2'||k==='4'?`하락 추세 속 ${k}파 반등 — 반등 매도·관망(매수 자리 아님)`:`하락 ${k}파 진행 — 매수 금지, 관망`;tone='r';
+      if(k==='2')r=[`1파 시작(${u?'위로':'아래로'} 가면 해석 무효)`,ref(1,!u)];if(k==='4'&&legs[legs.length-4])r=[`1파 끝(${u?'위로':'아래로'} 가면 해석 무효)`,px(legs[legs.length-4][0],!u)]}
+    else if(u){m=k==='B'?'하락 중 B 반등 — 끝나면 C 하락 가능, 신규 매수 보류':k==='A'?'하락 뒤 반등 A — 반등의 성격 확인 전 관망':k==='C'?'반등 마지막 C — 끝나면 하락 재개 가능, 추격 매수 자제':'조정 반등 — 관망';tone='r';
+      if(k==='B')r=['A 시작(넘으면 해석 변경)',ref(1,false)]}
+    else{m=k==='A'?'상승 뒤 조정 A — 매수 보류':k==='B'?'반등 중 눌림 B — C 반등 여부 관찰':k==='C'?'조정 마지막 C 하락 — 5개 완료·투매 뒤 C → 1 전환을 관찰':'조정 하락 — 관망';
+      tone=k==='C'?'y':'r'}
+    if(m)act.push(m+(r&&r[1]!=null?` · 기준 ${r[0]} <b>${P(r[1])}</b>`:''));}
+  else act.push(adx[N]>=25?(dir[N]>0?'상승 추세 — 눌림 확인 후 동참':'하락 추세 — 관망'):'방향 불분명 — 돌파 확인 전 관망');
+  // 거래량 경고·최근 신호(5거래일)
+  if(ddn[N]>=5){now.push(`<span class="r">분산일 ${ddn[N]}/4주(대량 매도 누적)</span>`);if(tone==='g')tone='y'}else if(ddn[N]>=3)now.push(`<span class="y">분산일 ${ddn[N]}/4주</span>`);
+  const t5=bars[Math.max(0,N-4)].time,rec=[...new Map(markers.filter(x=>x.time>=t5).map(x=>[x.key,x])).values()];
+  if(rec.length)now.push('최근 신호 '+rec.map(x=>`${x.key}${SIGV[x.key]?`(${SIGV[x.key]})`:''}`).join('·'));
+  el.innerHTML=`<div><b>현재</b> ${now.join(' · ')}</div><div><b>대응</b> <span class="${tone}">${act.join(' · ')}</span> <small>· 자동 해석(매 빌드 갱신), 투자 권유 아님</small></div>`}
+tsum();
 const allMarkers=applyWaves(); // A 통합·C 하단에 신호 + 엘리엇 파동
 
 // ---------- C 하단: 추세 리본 차트 (산점도와 연동) ----------
