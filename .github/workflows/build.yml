@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: ["web/**", "build.py", "indicators.py", ".github/workflows/build.yml"]
+    paths: ["web/**", "build.py", "indicators.py", "elliott.py", ".github/workflows/build.yml"]
 permissions:
   contents: read
   pages: write
