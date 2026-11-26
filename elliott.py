@@ -76,7 +76,7 @@ def auto_th(H, L, C, k, lo, hi):
 # ---------- 한 등급 세기 ----------
 # 하위 파동 수(m)별 점수: 충격(1·3·5·C)=5개(연장 9개), A=5 또는 3(플랫), 조정(2·4·B)=3개(삼각형 5·복합 7).
 # m=1(하위 구조 없음)은 감점 → 상위 등급은 하위 파동을 묶어서 만들어짐
-SUB_MOT = {5: 3.0, 9: 2.5, 7: 0.5, 3: -1.5, 1: -3.0, 11: 0.5}
+SUB_MOT = {5: 3.0, 9: 2.5, 7: 0.5, 3: -3.0, 1: -3.0, 11: 0.5}
 SUB_A = {5: 3.0, 3: 2.5, 7: 1.0, 9: 1.0, 1: -3.0, 11: 0.5}
 SUB_COR = {3: 3.0, 5: 2.0, 7: 2.0, 1: -2.5, 9: 0.5, 11: 0.5}
 K_BEAM = 3
@@ -84,13 +84,18 @@ TREND_W = 0.25       # 추세 파동(1·3·5) 크기 가점·조정 파동 크�
 OVER_MAX, OVER_W = 0.38, 8.0   # 조정이 시작점을 넘는 폭(확장 플랫) 상한·감점
 DEV_MAX, DEV_W = 0.6, 4.0      # 조정 끝이 구간 극점에서 떨어진 정도 상한·감점
 LIVE_W = 4.0                   # 진행 중 파동이 이미 반대 꼭지를 넘었을 때 감점
+TRI_EXT = True                 # 역대칭·오름새·내림새 삼각형도 인정
+TRI_FLAT = 0.1                 # 오름새·내림새 삼각형: 평평한 변 허용 폭(a파 크기 대비)
+DIAG_PEN = 3.0                 # 대각 삼각형(4파의 1파 영역 침범 예외) 감점, None = 허용 안 함
+CH_W, VOL_W, EXT_W = 0.5, 0.5, 0.5   # 궤도선·거래량·연장 뒤 되돌림 지침 가중치
+FIB_W = 0.5                    # 피보나치·교대 지침 가중치
 B_MAX, B_HARD, B_W = 1.38, 1.618, 20.0   # 조정 안 B파: A의 138.2%부터 감점, 161.8% 초과 불가
 BAR_START = False
 WK_BAR = False                 # 주봉 등급: 충격 극점을 실제 봉으로 확인
 RESTART = 6.0                  # 규칙상 이어갈 수 없을 때 새로 세기 감점
 
 
-def count_level(P, rmq, restart=False, cut=(), bar=False):
+def count_level(P, rmq, restart=False, cut=(), bar=False, vol=None):
     """P: 교대 피벗 [(i, 'H'|'L', 가격)]. 반환: 다리 목록 [(시작피벗, 끝피벗, pos, d)] (마지막 다리 = 진행 중)."""
     n = len(P)
     if n < 4:
@@ -150,12 +155,22 @@ def count_level(P, rmq, restart=False, cut=(), bar=False):
             return None                                      # 2파(가장 깊은 곳)가 1파 시작을 넘음
         if pos == 2 and g(1) is not None and not final and d * (g(3) - g(1)) <= 0:
             return None                                      # 3파가 1파 끝을 못 넘음
+        mm = lambda x: b[x + 1] - b[x] if b[x] is not None and b[x + 1] is not None else 1   # 다리 x의 하위 파동 수
         if pos == 3 and g(1) is not None and d * (ext(b[3], b[4], -d) - g(1)) <= 0:
-            return None                                      # 4파가 1파 영역 침범
+            # 4파가 1파 영역 침범 = 원칙 위반. 예외: 대각 삼각형(쐐기 — 3파 < 1파로 좁혀지고, 각 파동이 3개짜리, 4파는 2파 끝 위)
+            if g(0) is None or g(2) is None:
+                return None
+            w1_, w3_ = abs(g(1) - g(0)), abs(g(3) - g(2))
+            if not (DIAG_PEN is not None and w3_ < w1_ and all(mm(x) in (1, 3) for x in range(4))
+                    and d * (g(4) - g(2)) > 0):
+                return None
+            s -= DIAG_PEN
         if pos == 4 and all(b[x] is not None for x in range(6)):
             w1, w3, w5 = abs(g(1) - g(0)), abs(g(3) - g(2)), abs(g(5) - g(4))
             if w3 < w1 and w3 < w5:
                 return None                                  # 3파 최단
+            if d * (ext(b[3], b[4], -d) - g(1)) <= 0 and not (w5 < w3 and mm(4) in (1, 3)):
+                return None                                  # 대각 삼각형이면 5파도 좁혀지고 3개짜리여야 함
             if not final and d * (g(5) - g(3)) <= 0:
                 s -= 1.5                                     # 5파 미달(절단)
             if w3 >= w1:
@@ -169,6 +184,50 @@ def count_level(P, rmq, restart=False, cut=(), bar=False):
             s += 0.5 if d * (g(8) - g(6)) < 0 else -1.0      # C파가 A파 끝을 넘는가
             if g(5) is not None and abs(g(8) - g(7)) < 0.618 * abs(g(6) - g(5)):
                 s -= 1.5                                     # C파가 A파의 61.8%도 안 됨
+        # 실무 지침(프로스트·프렉터, 월가 관행) — 규칙이 아니라 '흔한 비율' 가점·감점(FIB_W)
+        if FIB_W and not final:
+            L_ = lambda x, y: abs(g(y) - g(x)) if g(x) is not None and g(y) is not None else None
+            w1, w2, w3, w4, wa, wb, wc = L_(0, 1), L_(1, 2), L_(2, 3), L_(3, 4), L_(5, 6), L_(6, 7), L_(7, 8)
+            if pos == 1 and w1 and w2 is not None:
+                r = w2 / w1                                  # 2파 되돌림: 보통 50~61.8%(38.2~78.6%)
+                s += FIB_W if .382 <= r <= .786 else -FIB_W if r < .236 else 0
+            if pos == 2 and w1 and w3:
+                r = w3 / w1                                  # 3파: 보통 1파의 1.618배 안팎
+                s += FIB_W * .5 if 1.382 <= r <= 2.9 else 0
+            if pos == 3 and w3 and w4 is not None:
+                r = w4 / w3                                  # 4파 되돌림: 보통 23.6~50%
+                s += FIB_W if .236 <= r <= .5 else -FIB_W if r > .618 else 0
+                if w1 and w2 is not None and abs(w2 / w1 - r) > .15:
+                    s += FIB_W * .5                          # 교대: 2파와 4파의 깊이가 다름
+            if pos == 6 and wa and wb is not None:
+                r = wb / wa                                  # B: 지그재그 38.2~78.6%, 플랫 90%↑ — 23.6% 미만은 드묾
+                s += FIB_W * .5 if r >= .382 else -FIB_W if r < .236 else 0
+            if pos == 7 and wa and wc:
+                r = wc / wa                                  # C ≈ A (61.8~161.8%)
+                s += FIB_W if .618 <= r <= 1.618 else 0
+        t = lambda x: P[b[x]][0]
+        if CH_W and not final and pos in (3, 4) and all(b[x] is not None for x in range(pos + 2)):
+            if pos == 3:                                     # 4파 목표: 1·3파 끝을 잇는 선과 평행하게 2파 끝을 지나는 선
+                e4 = g(2) + (g(3) - g(1)) / ((t(3) - t(1)) or 1) * (t(4) - t(2))
+                s += CH_W if abs(g(4) - e4) <= .25 * abs(g(3) - g(2)) else 0
+            else:                                            # 5파 목표: 2·4파 기준선과 평행하게 3파 끝을 지나는 궤도선(뚫고 넘어감 흔함)
+                e5 = g(3) + (g(4) - g(2)) / ((t(4) - t(2)) or 1) * (t(5) - t(3))
+                w5_ = abs(g(5) - g(4)) or 1e-9
+                s += CH_W if -.3 * w5_ <= d * (g(5) - e5) <= .5 * w5_ else 0
+        if VOL_W and vol and not final:                      # 거래량 지침: 3파 거래량이 가장 크고 5파는 줄어듦, 조정은 거래량 감소
+            va = lambda x: vol(t(x), t(x + 1)) if b[x] is not None and b[x + 1] is not None else None
+            cur, prv = va(pos), va(pos - 1) if pos > 0 else None
+            if cur and prv:
+                if pos in (1, 3, 6) and cur < prv:
+                    s += VOL_W * .5                          # 조정(2·4·B)은 앞 파동보다 거래량 적음
+                if pos == 2 and d > 0 and va(0) and cur > va(0):
+                    s += VOL_W * .5                          # 상승 3파 거래량 > 1파
+                if pos == 4 and d > 0 and va(2) and cur < va(2):
+                    s += VOL_W * .5                          # 상승 5파 거래량 < 3파(다이버전스)
+        if EXT_W and pos == 5 and not final and all(b[x] is not None for x in range(7)):
+            w1, w3, w5 = abs(g(1) - g(0)), abs(g(3) - g(2)), abs(g(5) - g(4))
+            if w5 > w3 and w5 > w1:                          # 5파 연장 뒤 A파는 연장 출발점(4파 끝) 근처까지 되돌림
+                s += EXT_W if abs(g(6) - g(4)) <= .3 * w5 else 0
         # 추세 파동(1·3·5)은 조정 파동(2·4·A·C)보다 크다: 크기 비례 가감
         r = min(abs(g(pos + 1) - g(pos)) / unit, 4.0)
         if pos in (0, 2, 4):
@@ -183,10 +242,8 @@ def count_level(P, rmq, restart=False, cut=(), bar=False):
         w1, w3, w5 = abs(p[1] - p[0]), abs(p[3] - p[2]), abs(p[5] - p[4])
         return ld * (p[2] - p[0]) > 0 and ld * (p[3] - p[1]) > 0 and ld * (p[4] - p[1]) > 0 and not (w3 < w1 and w3 < w5)
 
-    def inner_triangle(j):  # 하위 5개가 수렴 삼각형(a~e)인가
-        p = v[j:j + 6]
-        L_ = [abs(p[x + 1] - p[x]) for x in range(5)]
-        return L_[2] < L_[0] and L_[3] < L_[1] and L_[4] < L_[2]
+    def inner_triangle(j):  # 하위 5개가 수평형 삼각형(대칭·역대칭·오름새·내림새)인가
+        return tri_shape(v[j:j + 6])
 
     def sub(pos, m, first, final, j):
         motive = pos in (0, 2, 4, 7) or (pos == 5 and m == 5)
@@ -272,10 +329,25 @@ def count_level(P, rmq, restart=False, cut=(), bar=False):
     return legs[::-1]
 
 
+def tri_shape(p):
+    """6개 꼭지(로그 가격) p0..p5 = a~e 다섯 다리가 수평형 삼각형인가(책 도표 17).
+    대칭(수렴: 다리마다 짧아짐) · 역대칭(확산: 다리마다 길어짐) · 오름새/내림새(한쪽 변이 평평, 다른 쪽이 좁혀 옴).
+    공통: 다섯 다리가 서로 겹침(e가 a 시작점을 넘지 않음)."""
+    L_ = [abs(p[x + 1] - p[x]) for x in range(5)]
+    if not L_[0]:
+        return False
+    if abs(p[5] - p[0]) > L_[0]:
+        return False                                         # 겹치지 않음 = 삼각형 아님
+    contract = L_[2] < L_[0] and L_[3] < L_[1] and L_[4] < L_[2]
+    expand = L_[2] > L_[0] and L_[3] > L_[1] and L_[4] > L_[2]
+    flat = TRI_FLAT * L_[0]
+    barrier = ((abs(p[3] - p[1]) <= flat and L_[3] < L_[1]) or (abs(p[4] - p[2]) <= flat and L_[2] < L_[0]))
+    return contract or (TRI_EXT and (expand or barrier))
+
+
 def tri(kids):
-    """하위 5개 다리가 수렴 삼각형(각 다리가 2개 앞 다리보다 짧음)인가 — 다리 크기는 봉 번호가 아니라 'sz'(로그 크기)"""
-    z = [c.get('sz', 0) for c in kids]
-    return all(z[i] < z[i - 2] for i in range(2, 5))
+    """하위 5개 다리가 수평형 삼각형인가(tri_shape, 다리 끝 로그 가격 'pa'·'pb')"""
+    return tri_shape([kids[0]['pa']] + [c['pb'] for c in kids])
 
 
 def imp_ok(kids):
@@ -284,6 +356,23 @@ def imp_ok(kids):
     d = 1 if p[5] > p[0] else -1
     w = [abs(p[i + 1] - p[i]) for i in range(5)]
     return d * (p[2] - p[0]) > 0 and d * (p[4] - p[1]) > 0 and not (w[2] < w[0] and w[2] < w[4])
+
+
+MOT_M, COR_M = {1, 5, 9, 13}, {1, 3, 5, 7, 11}   # 하위 파동 수: 충격 = 5(연장 9), 조정 = 3(삼각형 5·복합 7)
+
+
+def fits(keys, kids, pk=''):
+    """하위 파동 수가 붙일 라벨과 맞는가(구조 우선).
+    충격 1-5 = 5-3-5-3-5(또는 대각 삼각형 3-3-3-3-3), 지그재그 5-3-5·플랫 3-3-5, 삼각형 3-3-3-3-3."""
+    ms = [c['m'] for c in kids]
+    if keys[:1] == '1':
+        imp = all((m in MOT_M) if k in '135' else (m in COR_M) for k, m in zip(keys, ms))
+        diag = (len(keys) == 5 or pk in '5C') and all(m in (1, 3) for m in ms)   # 대각 삼각형(끝 = 5·C 자리, 진행 중 포함)
+        return imp or diag
+    if keys == 'ABCDE':
+        return all(m in (1, 3, 5) for m in ms)               # 삼각형: 각 3개(마지막 e는 작은 삼각형 5개 가능)
+    ok = {'A': {1, 3, 5}, 'B': COR_M, 'C': MOT_M, 'X': COR_M}  # 지그재그 5-3-5·플랫 3-3-5·복합 W-X-Y
+    return all(m in ok[k] for k, m in zip(keys, ms))
 
 
 def relabel(parent, child):
@@ -309,6 +398,8 @@ def relabel(parent, child):
             keys = 'ABCXABC'
         else:
             continue                                         # 하위 구조가 원칙과 다르면(연장 등) 하위 등급 자체 해석 유지
+        if n > 1 and not fits(keys, kids, P['k']):
+            continue                                         # 붙일 라벨과 하위 파동 수가 안 맞으면(예: 3개짜리에 '1') 하위 해석 유지
         for c, k in zip(kids, keys):
             c['k'] = k
 
@@ -334,11 +425,17 @@ def range_ext(H, L):
     return q
 
 
-def count_all(H, L, C, th, degs, must=(), bar=False):
+def count_all(H, L, C, th, degs, must=(), bar=False, V=None):
     """여러 등급을 아래에서 위로 세고(꺾임 묶기), 라벨은 위에서 아래로 다시 붙임.
     반환: {등급: [{'s','e' 봉 번호, 'k' 라벨키, 'up' 상승 다리, 'm' 하위 수, 'live' 진행 중}]}"""
     P = zigzag(H, L, th)
     rmq = range_ext(H, L)
+    vol = None
+    if V and any(V):
+        cs = [0.0]
+        for x in V:
+            cs.append(cs[-1] + (x or 0))
+        vol = lambda a, b: (cs[b + 1] - cs[a]) / (b - a + 1) if b >= a else None   # 봉 a~b 평균 거래량
     cutb = set()                                             # 상위(주봉) 경계 봉 → 가장 가까운 지그재그 피벗(3봉 이내)
     for b in must:
         near = min(P, key=lambda p: abs(p[0] - b), default=None)
@@ -347,7 +444,7 @@ def count_all(H, L, C, th, degs, must=(), bar=False):
     out = {}
     for deg in degs:
         cut = [i for i, p in enumerate(P) if p[0] in cutb]
-        legs = count_level(P, rmq, cut=cut, bar=bar) or count_level(P, rmq, True, cut, bar)
+        legs = count_level(P, rmq, cut=cut, bar=bar, vol=vol) or count_level(P, rmq, True, cut, bar, vol)
         if len(legs) < 2:
             break
         out[deg] = [{'s': P[a][0], 'e': P[k][0], 'k': POS[pos], 'up': P[a][1] == 'L', 'sz': abs(math.log(P[k][2] / P[a][2])), 'pa': math.log(P[a][2]), 'pb': math.log(P[k][2]),
@@ -366,7 +463,8 @@ def weekly(bars):
     for b in bars:
         y, w, _ = dt.date.fromisoformat(b['time']).isocalendar()
         if not W or W[-1]['k'] != (y, w):
-            W.append({'k': (y, w), 'high': b['high'], 'low': b['low'], 'close': b['close'], 'hd': b['time'], 'ld': b['time']})
+            W.append({'k': (y, w), 'high': b['high'], 'low': b['low'], 'close': b['close'], 'hd': b['time'], 'ld': b['time'],
+                      'volume': b.get('volume') or 0})
         else:
             x = W[-1]
             if b['high'] >= x['high']:
@@ -374,14 +472,15 @@ def weekly(bars):
             if b['low'] <= x['low']:
                 x['low'], x['ld'] = b['low'], b['time']
             x['close'] = b['close']
+            x['volume'] += b.get('volume') or 0
     return W
 
 
-def weekly_count(H, L, C):
+def weekly_count(H, L, C, V=None):
     """주봉 등급을 여러 지그재그 문턱(WK_KS)으로 세고, 큰 등급(프라이머리·사이클) 경계가 다른 문턱 결과와
     가장 많이 겹치는 것(합의안)을 고름 — 문턱 하나에 따라 구조가 흔들리지 않게."""
     _, lo, hi = WK_TH
-    outs = [count_all(H, L, C, auto_th(H, L, C, k, lo, hi), [WEEK_DEG0] + WEEKLY_DEG, bar=WK_BAR) for k in WK_KS]
+    outs = [count_all(H, L, C, auto_th(H, L, C, k, lo, hi), [WEEK_DEG0] + WEEKLY_DEG, bar=WK_BAR, V=V) for k in WK_KS]
     if len(outs) == 1:
         return outs[0]
     bset = [{x['e'] for deg in WEEKLY_DEG for x in o.get(deg, []) if not x['live']} for o in outs]
@@ -401,7 +500,7 @@ def analyze(daily, long_daily=None):
     W = weekly(long_daily or daily)
     if len(W) >= 100:
         H, L, C = [w['high'] for w in W], [w['low'] for w in W], [w['close'] for w in W]
-        out = weekly_count(H, L, C)
+        out = weekly_count(H, L, C, [w['volume'] for w in W])
         for deg, legs in out.items():
             rows = [(W[x['e']]['hd' if x['up'] else 'ld'], sym(deg, x['k']), int(x['live']),
                      W[x['s']]['ld' if x['up'] else 'hd'], int(x['up'])) for x in legs]
@@ -417,7 +516,7 @@ def analyze(daily, long_daily=None):
         th = auto_th(H, L, C, 1.5, .02, .08)
         n = len(daily)
         mi = [i for i, b in enumerate(daily) if b['time'] in must and 0 < i < n - 1]
-        out = count_all(H, L, C, th, DAILY_DEG[:2] if wint else DAILY_DEG, mi)
+        out = count_all(H, L, C, th, DAILY_DEG[:2] if wint else DAILY_DEG, mi, V=[b.get('volume') or 0 for b in daily])
         lo = DAILY_DEG[1]
         if wint and lo in out:
             tix = {b['time']: i for i, b in enumerate(daily)}
