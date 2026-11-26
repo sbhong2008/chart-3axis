@@ -244,6 +244,69 @@ def us_universe():
     return items
 
 
+# ---------- 섹터 고정표 (사용자 승인 없이 섹터 분류가 바뀌지 않게) ----------
+# 저장소의 sectors_lock.json = 승인된 종목 → 섹터. 빌드는 항상 이것을 우선(외부 업종 자료원이 깨지거나 바뀌어도 그대로),
+# 고정표에 없는 새 종목만 그날 분류를 씀. 고정표 갱신은 사용자 승인 후 로컬에서 --update-sector-lock 으로만(빌드 서버는 고치지 않음).
+SECTOR_LOCK = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'sectors_lock.json')
+SECTOR_CHECK = {}
+
+
+def apply_rules(uni, mk, lock):
+    """재분류 규칙(고정표의 'rules' → 시장별 목록, 위에서부터 차례로) — 종목을 하나씩 고치지 않고 섹터를 나누기·합치기·이름 바꾸기.
+    {"from": "정보기술", "to": "IT"}            = 섹터 이름 바꾸기·합치기
+    {"ind": "Semiconductors", "to": "반도체"}    = 업종(ind)에 이 글자가 든 종목을 다른 섹터로 분리(선택 "from": 원래 섹터 한정)
+    {"id": "US:NVDA", "to": "반도체"}            = 개별 종목 보정
+    규칙 변경도 사용자 승인 후에만 커밋."""
+    for r in lock.get('rules', {}).get(mk, []):
+        for x in uni:
+            if 'from' in r and x['s'] != r['from']:
+                continue
+            if 'ind' in r and r['ind'] not in (x.get('ind') or ''):
+                continue
+            if 'id' in r and x['id'] != r['id']:
+                continue
+            x['s'] = r['to']
+
+
+def lock_sectors(uni, mk, update=False, diff_only=False):
+    lock = json.load(open(SECTOR_LOCK, encoding='utf-8')) if os.path.exists(SECTOR_LOCK) else {}
+    if diff_only:                                            # 승인 판단용: 자료원(+규칙) 분류가 고정표와 어떻게 다른지 미리 보기
+        live = {x['id']: x['s'] for x in uni}
+        L = lock.get(mk, {})
+        moves = defaultdict(list)
+        for x in uni:
+            if x['id'] in L and L[x['id']] != x['s']:
+                moves[(L[x['id']], x['s'])].append(x['n'])
+        log(f'[섹터 미리 보기 {mk}] 고정표 {len(L)} · 자료원 {len(live)} · 새 종목 {sum(i not in L for i in live)} · 옮겨질 종목 {sum(len(v) for v in moves.values())}')
+        for (a_, b_), names in sorted(moves.items(), key=lambda kv: -len(kv[1])):
+            log(f'  {a_} → {b_}: {len(names)}종목 (예: {", ".join(names[:5])})')
+        return
+    if update:
+        lock[mk] = {x['id']: x['s'] for x in uni}
+        lock['updated'] = dt.date.today().isoformat()
+        with open(SECTOR_LOCK, 'w', encoding='utf-8') as f:
+            json.dump(lock, f, ensure_ascii=False, indent=0, sort_keys=True)
+        log(f'섹터 고정표 갱신({mk}) {len(lock[mk])}종목 — 커밋 전 사용자 승인 필요')
+        return
+    L = lock.get(mk, {})
+    diff, new, etc = [], 0, sum(x['s'] == '기타' for x in uni)
+    for x in uni:
+        s = L.get(x['id'])
+        if s is None:
+            new += 1
+        elif s != x['s']:
+            diff.append((x['id'], x['s'], s))
+            x['s'] = s                                        # 승인된 섹터 유지
+    SECTOR_CHECK[mk] = {'locked': len(L), 'new': new, 'changed_by_source': len(diff),
+                        'source_etc': etc, 'total': len(uni), 'sample': diff[:20]}
+    log(f'섹터 고정({mk}): 고정표 {len(L)} · 새 종목 {new} · 자료원과 다름 {len(diff)}(고정표 유지) · 자료원 기타 {etc}/{len(uni)}')
+    if not L:
+        log(f'⚠ 섹터 고정표({mk}) 없음 — 자료원 분류 그대로 사용')
+    elif len(diff) > len(uni) * 0.05 or etc > len(uni) * 0.3:
+        log(f'⚠ 섹터 자료원 이상 의심({mk}) — 고정표로 유지함, 확인 후 사용자 승인 받아 갱신')
+    apply_rules(uni, mk, lock)                               # 승인된 재분류 규칙(나누기·합치기·이름 바꾸기)
+
+
 # ---------- 시세 ----------
 EW = {}      # id → 엘리엇 다층 파동(elliott.analyze)
 LSTART = None  # 장기(주봉 등급용) 시작일 — main 에서 설정
@@ -481,6 +544,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--out', default=os.path.join(HERE, 'site'))
     ap.add_argument('--limit', type=int, default=0, help='시험용: 시장별 종목 수 제한')
+    ap.add_argument('--sector-diff', action='store_true', help='자료원 분류가 고정표와 어떻게 다른지 미리 보기(승인 판단용, 아무것도 안 바꿈)')
+    ap.add_argument('--update-sector-lock', action='store_true', help='섹터 고정표를 지금 분류로 갱신하고 끝냄(사용자 승인 후 로컬에서만)')
     ap.add_argument('--markets', default='KR,US')
     ap.add_argument('--days', type=int, default=730)
     ap.add_argument('--lstart', default='2000-01-01', help='엘리엇 주봉 등급(프라이머리·사이클)용 장기 시작일(고정 — 시작점에 따라 큰 등급 라벨이 바뀌지 않게, 국내는 자료원 한도 약 12년)')
@@ -501,6 +566,12 @@ def main():
     # 2) 종목
     for mk in a.markets.split(','):
         uni = kr_universe() if mk == 'KR' else us_universe()
+        if a.sector_diff:
+            lock_sectors(uni, mk, diff_only=True)
+            continue
+        lock_sectors(uni, mk, a.update_sector_lock)
+        if a.update_sector_lock:
+            continue
         if a.limit:
             uni = uni[:a.limit] + [x for x in uni if x['m'] == 'ETF' or (x.get('nq') and x['n'][:1] in 'AB')][:a.limit]
         log(mk, '종목', len(uni))
@@ -533,6 +604,9 @@ def main():
         for b in bars.get(i) or []:
             if b['time'] in m:
                 b['sr'] = m[b['time']]
+
+    if a.update_sector_lock or a.sector_diff:
+        return                                               # 고정표 갱신·미리 보기만 하고 끝
 
     # 3) 섹터지수 (ETF·지표 제외, 종목 2개 이상)
     groups = defaultdict(list)
@@ -588,6 +662,8 @@ def main():
            'quality': {k: {'n': len(v), 'ids': v[:40]} for k, v in quality.items()},
            'coverage': {mk: {'ok': sum(1 for it in kept if it['id'].startswith(mk + ':')), 'all': stock_n[mk]} for mk in stock_n},
            'stats': {mk: agg(s) for mk, s in samples.items()}}
+    with open(os.path.join(out, 'data', 'sector_check.json'), 'w', encoding='utf-8') as f:   # 섹터 고정 점검(자료원과 다른 종목 수)
+        json.dump({'updated': now, **SECTOR_CHECK}, f, ensure_ascii=False)
     with open(os.path.join(out, 'data', 'validation.json'), 'w') as f:
         json.dump(val, f, separators=(',', ':'), ensure_ascii=False)
     log('완료', len(kept), '/', len(items), '→', out, '| 품질', {k: len(v) for k, v in quality.items()})
