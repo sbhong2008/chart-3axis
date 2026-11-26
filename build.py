@@ -39,7 +39,68 @@ INDICES = [
     ('BTC', 'yf', 'BTC-USD', '비트코인', '글로벌'),
 ]
 
-# ---------- 국내 업종(KSIC 158개) → 대표 섹터 ----------
+# ---------- 국내 업종 → 대표 섹터 ----------
+# 1순위: 네이버 증권 업종 79개(WICS 계열, 로그인 불필요). 2026-11 FinanceDataReader KRX-DESC 의 Industry 가 전부 비게 되어 교체
+NAVER_SECTOR = {  # 네이버 업종 → 대표 섹터
+    '반도체': ['반도체와반도체장비'],
+    '2차전지': ['전기제품'],
+    'IT하드웨어·부품': ['전자장비와기기', '전자제품', '디스플레이장비및부품', '디스플레이패널', '컴퓨터와주변기기', '사무용전자제품', '통신장비', '핸드셋'],
+    '소프트웨어·인터넷': ['소프트웨어', 'IT서비스', '양방향미디어와서비스', '게임엔터테인먼트'],
+    '통신': ['다각화된통신서비스', '무선통신서비스'],
+    '미디어·엔터': ['방송과엔터테인먼트', '광고', '출판'],
+    '바이오·제약': ['제약', '생물공학', '생명과학도구및서비스'],
+    '의료기기·헬스케어': ['건강관리장비와용품', '건강관리기술', '건강관리업체및서비스'],
+    '금융': ['은행', '증권', '생명보험', '손해보험', '카드', '기타금융', '창업투자', '부동산'],
+    '건설·건자재': ['건설', '건축자재', '건축제품'],
+    '유틸리티': ['전기유틸리티', '가스유틸리티', '복합유틸리티'],
+    '전력기기·전기장비': ['전기장비'],
+    '기계': ['기계'],
+    '조선': ['조선'],
+    '방산·항공우주': ['우주항공과국방'],
+    '자동차': ['자동차', '자동차부품'],
+    '정유·에너지': ['석유와가스', '에너지장비및서비스'],
+    '화학': ['화학', '포장재', '종이와목재'],
+    '철강·금속': ['철강', '비철금속'],
+    '화장품': ['화장품'],
+    '음식료': ['식품', '음료', '담배'],
+    '섬유·의류': ['섬유,의류,신발,호화품'],
+    '운송·물류': ['도로와철도운송', '해운사', '항공사', '항공화물운송과물류', '운송인프라'],
+    '유통·소비재': ['판매업체', '무역회사와판매업체', '전문소매', '백화점과일반상점', '인터넷과카탈로그소매', '식품과기본식료품소매',
+                 '호텔,레스토랑,레저', '레저용장비와제품', '가정용품', '가정용기기와용품', '가구', '문구류', '다각화된소비자서비스', '상업서비스와공급품'],
+    '교육': ['교육서비스'],
+    '지주·복합': ['복합기업'],
+}
+NAVER_INV = {n: sec for sec, ns in NAVER_SECTOR.items() for n in ns}
+NAVER_API = 'https://m.stock.naver.com/api/stocks/industry'
+
+
+def naver_industry():
+    """네이버 업종 79개와 소속 종목 → {종목코드: 업종명}. 실패 시 빈 사전(→ KSIC 규칙으로 대체)."""
+    def get(url):
+        for k in range(3):
+            try:
+                req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+                return json.load(urllib.request.urlopen(req, timeout=20))
+            except Exception as e:
+                err = e; time.sleep(1 + k)
+        raise err
+    out = {}
+    try:
+        for g in get(f'{NAVER_API}?page=1&pageSize=100')['groups']:
+            p = 1
+            while True:
+                r = get(f"{NAVER_API}/{g['no']}?page={p}&pageSize=100")
+                for x in r['stocks']:
+                    out[x['itemCode']] = g['name']
+                if p * 100 >= r['totalCount']:
+                    break
+                p += 1
+    except Exception as e:
+        log('네이버 업종 실패 → KSIC 규칙 사용', e)
+    return out
+
+
+# 2순위(대체): KSIC 158개 → 대표 섹터 (FinanceDataReader Industry 가 다시 채워지면 사용)
 KR_SECTOR_RULES = [
     ('반도체', ['반도체']),
     ('2차전지', ['이차전지']),
@@ -51,7 +112,7 @@ KR_SECTOR_RULES = [
     ('통신', ['전기 통신업']),
     ('미디어·엔터', ['영화', '방송', '오디오물', '영상·오디오', '창작 및 예술', '광고업', '서적', '기록매체', '유원지', '스포츠 서비스']),
     ('바이오·제약', ['의약품', '기초 의약물질', '자연과학 및 공학 연구개발업']),
-    ('의료기기', ['의료용 기기', '의료용품']),
+    ('의료기기·헬스케어', ['의료용 기기', '의료용품']),
     ('금융', ['은행', '보험', '금융', '신탁업']),
     ('건설·건자재', ['건설업', '공사업', '건축기술', '시멘트', '유리', '내화', '기타 비금속', '건축자재', '나무제품', '제재', '가구 제조']),
     ('유틸리티', ['전기업', '연료용 가스', '증기, 냉']),
@@ -73,6 +134,7 @@ KR_SECTOR_OVERRIDE = {
     '005930': '반도체', '042700': '반도체', '403870': '반도체', '039030': '반도체', '240810': '반도체', '036930': '반도체',
     '058470': '반도체', '095340': '반도체', '357780': '반도체', '005290': '반도체', '084370': '반도체', '319660': '반도체',
     '086520': '2차전지', '009540': '조선', '034020': '전력기기·전기장비', '064350': '방산·항공우주', '028260': '건설·건자재',
+    '003670': '2차전지',
 }
 
 
@@ -150,9 +212,16 @@ def kr_universe():
         mc = dict(zip(*fdr.StockListing('KRX')[['Code', 'Marcap']].values.T))
     except Exception as e:
         log('시가총액 실패', e); mc = {}
-    return [{'id': f"KR:{r.Code}", 'n': r.Name, 'm': 'KOSPI' if r.Market == 'KOSPI' else 'KOSDAQ',
-             's': KR_SECTOR_OVERRIDE.get(r.Code) or kr_sector(r.Industry), 'ind': r.Industry if isinstance(r.Industry, str) else '',
+    nav = naver_industry()
+    out = [{'id': f"KR:{r.Code}", 'n': r.Name, 'm': 'KOSPI' if r.Market == 'KOSPI' else 'KOSDAQ',
+             's': KR_SECTOR_OVERRIDE.get(r.Code) or NAVER_INV.get(nav.get(r.Code)) or kr_sector(r.Industry),
+             'ind': nav.get(r.Code) or (r.Industry if isinstance(r.Industry, str) else ''),
              'mc': int(v) // 100_000_000 if (v := mc.get(r.Code)) and v == v else 0} for r in d.itertuples()]  # 시가총액(억원)
+    etc = sum(x['s'] == '기타' for x in out)
+    log(f'국내 섹터: 네이버 업종 {len(nav)}개 코드, 기타 {etc}/{len(out)}')
+    if out and etc > len(out) * 0.3:
+        log('⚠ 국내 섹터 분류 실패 의심(기타 30% 초과) — 업종 자료원 확인 필요')
+    return out
 
 
 def us_universe():
