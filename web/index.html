@@ -112,6 +112,7 @@ tr.det>td{background:#12161d;white-space:normal;text-align:left;cursor:default}
     <span><i class="sw" style="background:#ffa726"></i>BB 선 주황 = 스퀴즈</span>
     <span><i class="sw" style="background:rgb(38,200,140)"></i><i class="sw" style="background:rgb(255,82,82)"></i>거래량 양봉/음봉 (진할수록 평균 대비 큼)</span>
     <span>▲★3/▲2 상승 돌파 · ▲투매 = 하단 이탈+거래량(역발상 매수) · ▼꺾임 = 과열 추세 꺾임 · ▼경고 = 고점 다이버전스 · ■분산 = 고점 대량 매도 · ■매집 = 저점 대량 매수</span>
+    <span>오닐(검증 대상): ◆바닥돌파 = 바닥 패턴 피벗을 거래량 +40%↑로 돌파 · ▼50일↓ = 장기 상승 뒤 대량 거래로 50일선 첫 이탈 · ▼반등실패 = 50일선까지 반등했다 밀림 · ●⚡최후고점 = 상승 뒤 최대 주간 상승 + 200일선 50%↑ 이격 · 청록 상자 = 바닥 패턴, 점선 = 피벗·매수+5%·손절−8%, 하늘색·회색 선 = 50·200일선 · 지수 ▲반등 확인일·■시장 조정</span>
     <span>엘리엇 파동(끝점 표기 · 상승 5개 → 상위 1개, 조정 3개 → 상위 1개 · 매 빌드 재계산 · '→ x 진행' = 현재 파동): <span id="degsel"></span></span>
     <span>조짐(오닐): <i class="sw" style="background:#ffd600"></i>노랑·■처닝 = 상승 고점권에서 1~3일 거래량 증가인데 가격 제자리(−1~+0.5%) · <i class="sw" style="background:#ff9800"></i>주황 = 분산일(0.2%↓ 하락 + 전일보다 거래 많음, 처닝 중이면 진주황) · <i class="sw" style="background:#ff1744"></i>빨강·▼대분산 = 처닝 뒤 10일 안 장중 신고가인데 전일보다 낮게 마감(대규모 분산) · ■분산일5 = 4주 안 분산일 5회 · 헤더 '분산일 n/4주' 3회↑ 노랑(보유 재평가) · ●과열 = 20일 +20% 급등 뒤 3배 거래 클라이맥스 · ▼공매 = 공매도 비중 급증(40일 평균+2σ·1.25배↑, 미국 FINRA·국내 KRX, 최근 6개월)</span>
   </div>
@@ -205,7 +206,7 @@ function lockNow(){localStorage.removeItem('chartauth');location.reload();}
 const DATA='data/';
 const fmtP=v=>v==null?'-':(Math.abs(v)>=1000?Math.round(v).toLocaleString():(+v).toFixed(2));
 const LW=LightweightCharts;
-let U=[],UPD='',CUR=null,VAL=null,SIGV={};
+let U=[],UPD='',CUR=null,VAL=null,SIGV={},MKT={};
 const mkOf=id=>id.startsWith('KR')||id.startsWith('SEC:KR')?'KR':id.startsWith('US')||id.startsWith('SEC:US')?'US':null;
 const verdictOf=(id,key)=>{const mk=mkOf(id);return mk&&VAL?.stats?.[mk]?.sig?.[key]?.v};
 const VCLS={'유효':'ok','약함':'wk','역효과':'ng','보류':'muted'};
@@ -222,9 +223,12 @@ function drawDegSel(){const el=document.getElementById('degsel');if(!el)return;
   el.innerHTML=`${sw('마이너','I~V·A~C')} ${sw('마이뉴트','1~5·a~c')}
     <button class="tab ${ewOpt('ewBig')?'on':''}" id="ewBig" title="인터미디에이트 (I)·프라이머리 ①·사이클 cI">큰 파동 3등급 ${ewOpt('ewBig')?'숨기기':'보기'}</button>
     <button class="tab ${ewOpt('ewLine')?'on':''}" id="ewLine" title="파동 꺾임점을 등급별 색 선으로 연결">파동 선 ${ewOpt('ewLine')?'끄기':'연결'}</button>
+    <button class="tab ${patOn()?'on':''}" id="patBtn" title="오닐 바닥 패턴·피벗·매수 구간·손절선·50·200일선">패턴 ${patOn()?'숨기기':'보기'}</button>
     ${ewOpt('ewBig')?' '+sw('인터미디에이트','(I)·(A)')+' '+sw('프라이머리','①·Ⓐ')+' '+sw('사이클','cI·cA'):''}`;
   const t=k=>()=>{localStorage.setItem(k,ewOpt(k)?'0':'1');drawDegSel();window.__applyWaves&&window.__applyWaves()};
-  document.getElementById('ewBig').onclick=t('ewBig');document.getElementById('ewLine').onclick=t('ewLine');}
+  document.getElementById('ewBig').onclick=t('ewBig');document.getElementById('ewLine').onclick=t('ewLine');
+  document.getElementById('patBtn').onclick=()=>{localStorage.setItem('patOff',patOn()?'1':'0');drawDegSel();window.__applyWaves&&window.__applyWaves()};}
+const patOn=()=>localStorage.getItem('patOff')!=='1';
 const pathOf=it=>`${DATA}p/${it.f}.json`;
 const RG_COL={'응축':'#c99a00','횡보':'#555c68','추세시작↑':'#2e9d63','강한추세↑':'#00c46a','추세시작↓':'#b85454','강한추세↓':'#e53935'};
 const rgBadge=r=>`<span class="badge" style="background:${RG_COL[r]||'#333'}33;color:${RG_COL[r]||'#ccc'}">${r}</span>`;
@@ -340,7 +344,10 @@ function drawSecTable(mk){const t=document.getElementById('h'+mk);const rows=sec
     tr.after(d);});}
 function drawHome(){if(!U.length)return;const ix=U.filter(it=>it.id.startsWith('IX:'));
   const cnt=k=>ix.filter(it=>stOf(it)[1]===k).length;
-  document.getElementById('hsum').innerHTML=`기준 ${new Date(UPD).toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})} 갱신 · 주요 지표 ${ix.length}개 중 강세 ${cnt('강세')} · 약세 ${cnt('약세')} · 횡보 ${cnt('횡보')} · <a class="lk" onclick="showTab('V')">일일 검증 보기</a>`;
+  const mst=(mk,nm)=>{const x=MKT[mk];if(!x||!x.main||!x.main.st)return'';const m=x.main,c=m.st==='상승 확인'?'#7fdca8':m.st==='조정 중'?'#ff8a80':'#ffd54f';
+    return `<b>${nm}</b> <b style="color:${c}">${m.st}${m.k?` ${m.k}일째`:''}</b> (분산일 ${m.dd}/4주·50일선 위 종목 ${x.br?.a50??'-'}%)`};
+  const mline=[mst('KR','한국'),mst('US','미국')].filter(Boolean).join(' · ');
+  document.getElementById('hsum').innerHTML=(mline?`<div style="margin-bottom:3px">시장(오닐): ${mline}</div>`:'')+`기준 ${new Date(UPD).toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})} 갱신 · 주요 지표 ${ix.length}개 중 강세 ${cnt('강세')} · 약세 ${cnt('약세')} · 횡보 ${cnt('횡보')} · <a class="lk" onclick="showTab('V')">일일 검증 보기</a>`;
   const GIX=new Set(['IX:ACWI','IX:SX5E','IX:DAX']);  // 글로벌 중 대표 주가지수 → 맨 아래, 나머지(매크로) → 맨 위
   const HG=[['글로벌 매크로',it=>it.g==='글로벌'&&!GIX.has(it.id)],['한국'],['미국'],['일본'],['중국'],['글로벌',it=>GIX.has(it.id)]];
   document.getElementById('hidx').innerHTML=HG.map(([g,f])=>`<div class="grp">${g}</div><div class="cards">${
@@ -369,7 +376,7 @@ async function drawVal(){const el=document.getElementById('vbody');
     ${['KR','US'].map(mk=>`<div class="grp">${mk==='KR'?'국내':'미국'} — 신호별</div>${tbl(mk,'sig',['★3↑','2↑','투매','매집','꺾임','분산','경고','처닝','대분산','분산일5','과열','공매↑'])}<div class="grp">${mk==='KR'?'국내':'미국'} — 국면별</div>${tbl(mk,'rg',['강세','횡보','약세'])}`).join('')}`;}
 
 // ---------- 차트 (선택 종목) ----------
-function render(bars,ew){drawDegSel();
+function render(bars,ew,J){drawDegSel();
 const N=bars.length,C=bars.map(b=>b.close);
 // ---------- 지표 ----------
 const mid=[],up=[],lo=[],bw=[],sq=[];
@@ -447,6 +454,12 @@ const srs=bars.map(b=>b.sr??null);
       if(srs[i]>=m+2*sd&&srs[i]>=m*1.25){lSr=i;markers.push({time:bars[i].time,position:'aboveBar',shape:'arrowDown',color:'#ba68c8',text:'공매',key:'공매↑'});}}}}}
 markers.sort((a,b)=>a.time<b.time?-1:1);
 // 일일 검증 판정으로 색 조정: 유효 = 원래 색, 약함 = 흐리게, 역효과·보류 = 회색
+// 오닐(oneil.py, 빌드 계산): 바닥돌파·50일↓·반등실패·최후고점 + 지수 시장 사건(확인일·조정)
+{const tset=new Set(bars.map(b=>b.time));
+ const OSTY={'바닥돌파':['belowBar','arrowUp','#26c6da','◆바닥돌파'],'50일↓':['aboveBar','arrowDown','#ff7043','50일↓'],'반등실패':['aboveBar','arrowDown','#ef5350','반등실패'],'최후고점':['aboveBar','circle','#ff4081','⚡최후고점']};
+ for(const [t,k] of (J?.os||[])){const y=OSTY[k];if(y&&tset.has(t))markers.push({time:t,position:y[0],shape:y[1],color:y[2],text:y[3],key:k})}
+ for(const [t,k] of (J?.ms||[])){if(!tset.has(t))continue;if(k==='확인일')markers.push({time:t,position:'belowBar',shape:'arrowUp',color:'#00e676',text:'반등 확인일',key:'ms확인일'});
+   else if(k==='조정')markers.push({time:t,position:'aboveBar',shape:'square',color:'#ff5252',text:'시장 조정',key:'ms조정'})}}
 markers.forEach(m=>{const v=SIGV[m.key];if(!v||v==='유효')return;m.color=v==='약함'?m.color+'99':'#6b7280';if(v==='역효과')m.text+='✕';});
 
 const fmt=i=>`${bars[i].time}  종가 ${fmtP(C[i])}  BB폭 ${bw[i]!=null?(bw[i]*100).toFixed(1)+'%':'-'}${sq[i]?'(스퀴즈)':''}  ADX ${adx[i]?.toFixed(1)??'-'} (+DI ${pdi[i]?.toFixed(1)??'-'} / −DI ${mdi[i]?.toFixed(1)??'-'})  거래량 ${vr[i]?.toFixed(2)??'-'}배${bigd[i]?'(대규모 분산)':churn[i]?'(처닝)':''}  점수 ${score[i]??'-'}  [${regimeName(i)}]  분산일 ${ddn[i]}/4주${dday[i]?'(오늘)':''}${srs[i]!=null?`  공매도 ${srs[i]}%`:''}`;
@@ -621,6 +634,16 @@ function waveOverlay(ch,ser,id){const host=document.getElementById(id);host.styl
       lay.appendChild(el);const w=el.offsetWidth,h=el.offsetHeight,gap=6+(shapes.get(gr.time+'|'+gr.pos)||0)*13;
       if(gr.wave){const dot=document.createElement('div');dot.style.cssText=`position:absolute;width:7px;height:7px;border-radius:50%;left:${x-3.5}px;top:${(gr.pos==='aboveBar'?y-5:y+5)-3.5}px;background:${gr.rows[0].col}`;lay.appendChild(dot)}
       items.push({el,pri:gr.pri,left:Math.max(0,Math.min(W-w,x-w/2)),top:gr.pos==='aboveBar'?y-gap-h:y+gap,w,h,up:gr.pos==='aboveBar'})}
+    const PT=J?.pat;
+    if(PT&&patOn()&&ser===csA){const i0=dayIdx.get(snapT(PT.s)),i1=dayIdx.get(snapT(PT.e))??bars.length-1;
+      if(i0!=null){let hi=-1e300,lo=1e300;for(let i=i0;i<=i1;i++){hi=Math.max(hi,bars[i].high);lo=Math.min(lo,bars[i].low)}
+        let x1=ch.timeScale().timeToCoordinate(bars[i0].time),x2=ch.timeScale().timeToCoordinate(bars[i1].time);const y1=ser.priceToCoordinate(hi),y2=ser.priceToCoordinate(lo);
+        if(x2!=null&&y1!=null&&y2!=null&&x2>=0){x1=Math.max(0,x1??0);
+          const bx=document.createElement('div');bx.style.cssText=`position:absolute;left:${x1}px;top:${y1}px;width:${Math.max(4,x2-x1)}px;height:${Math.max(4,y2-y1)}px;border:1px dashed rgba(38,198,218,.7);background:rgba(38,198,218,.05);border-radius:3px`;lay.appendChild(bx);
+          const el=document.createElement('div');el.style.cssText='position:absolute;font:600 12px/1.3 system-ui,sans-serif;background:rgba(15,17,21,.85);border:1px solid rgba(38,198,218,.5);border-radius:4px;padding:0 4px;white-space:nowrap;color:#4dd0e1';
+          el.innerHTML=`${PT.k} ${PT.wk}주 −${PT.dp}% · ${PT.stg}번째 바닥<br><span style="color:#e0f7fa">피벗 ${fmtP(PT.pv)} · ${PT.st}${PT.gap!=null?` (${PT.gap}% 남음)`:''}</span>`;
+          lay.appendChild(el);const w=el.offsetWidth,h=el.offsetHeight,cx=(x1+x2)/2;
+          items.push({el,pri:1.5,left:Math.max(0,Math.min(W-w,cx-w/2)),top:y1-h-6,w,h,up:true})}}}
     // 자리 잡기: 큰 파동 → 신호 → 작은 파동 순. 겹치면 위(아래)로 밀고, 낮은 순위는 두 번 넘게 밀려야 하면 그리지 않음
     const placed=[],H=lay.clientHeight;
     for(const it of items.sort((a,b)=>a.pri-b.pri||a.left-b.left)){let n=0,ok=true;
@@ -633,6 +656,15 @@ function waveOverlay(ch,ser,id){const host=document.getElementById(id);host.styl
   ch.timeScale().subscribeVisibleLogicalRangeChange(draw);ch.timeScale().subscribeSizeChange&&ch.timeScale().subscribeSizeChange(draw);
   window.addEventListener('resize',draw);ovs.push(draw);draw();return draw}
 let c2c=null;
+// 오닐 패턴 선: 피벗(점선)·매수 구간(+5%)·손절(−8%) + 50·200일선 — '패턴' 버튼으로 켜고 끔
+let patSer=[];
+function patLines(){patSer.forEach(x=>chA.removeSeries(x));patSer=[];if(!patOn())return;
+  const mav=n=>C.map((_,i)=>i<n-1?null:C.slice(i-n+1,i+1).reduce((a,b)=>a+b,0)/n);
+  patSer.push(line(chA,mav(50),'rgba(128,222,234,.75)',1),line(chA,mav(200),'rgba(176,190,197,.55)',1));
+  const P=J?.pat;if(!P)return;const st=snapT(P.hs||P.s)||bars[0].time,t1=bars[bars.length-1].time;
+  const hl=(v,col,sty,ti)=>{const s_=chA.addLineSeries({color:col,lineWidth:1,lineStyle:sty,priceLineVisible:false,lastValueVisible:true,title:ti,crosshairMarkerVisible:false});
+    s_.setData([{time:st,value:v},{time:t1,value:v}]);patSer.push(s_)};
+  hl(P.pv,'#26c6da',2,'피벗');hl(P.pv*1.05,'rgba(38,198,218,.45)',1,'매수+5%');if(P.st!=='형성 중')hl(P.stop,'rgba(239,83,80,.7)',1,'손절')}   // 손절선은 돌파 뒤에만
 let ewLines=[];
 function waveLines(){ewLines.forEach(x=>chA.removeSeries(x));ewLines=[];if(!ewOpt('ewLine'))return;const on=degOn();
   for(const [deg,legs] of (ew?.lv||[])){if(!on.has(deg))continue;const pts=new Map();
@@ -643,7 +675,7 @@ function waveLines(){ewLines.forEach(x=>chA.removeSeries(x));ewLines=[];if(!ewOp
     const ln=chA.addLineSeries({color:DEGC[deg],lineWidth:big?3:2,lineStyle:deg==='마이뉴트'?2:0,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
     ln.setData(data);ewLines.push(ln);}}
 const applyWaves=()=>{const ms=markers.map(m=>({...m,text:''})).sort((a,b)=>a.time<b.time?-1:1);   // 표식은 모양만, 글자는 덮개 층(waveOverlay)이 겹침 없이 그림
-  csA.setMarkers(ms);if(c2c)c2c.setMarkers(ms);ovs.forEach(f=>f());waveLines();return ms};
+  patLines();csA.setMarkers(ms);if(c2c)c2c.setMarkers(ms);ovs.forEach(f=>f());waveLines();return ms};
 waveOverlay(chA,csA,'chartA');
 window.__applyWaves=applyWaves;
 // ---------- 현재 상황·대응 방향 요약 (매 빌드 데이터로 자동 갱신, 종목 예외 없이 규칙으로만) ----------
@@ -653,7 +685,7 @@ function tsum(){const el=document.getElementById('tsum');if(!el)return;const N=b
   const px=(d,low)=>{const t=snapT(d);if(!t)return null;const b=bars[dayIdx.get(t)];return low?b.low:b.high};
   const lv=Object.fromEntries((ew?.lv||[]).map(([d,l])=>[d,l]));
   const pick=['마이너','인터미디에이트'].find(d=>lv[d]&&lv[d].length&&lv[d][lv[d].length-1][2]);   // 일봉 확인용 주 등급
-  const now=[],act=[];let tone='y';
+  const now=[],act=[];let tone='y',eBull=false;
   // 추세(ADX)
   const rg=regimeName(N);now.push(`추세 <b>${rg}</b>(ADX ${adx[N]?.toFixed(0)??'-'})`);
   // 큰 흐름: 진행 중인 가장 큰 등급
@@ -663,6 +695,7 @@ function tsum(){const el=document.getElementById('tsum');if(!el)return;const N=b
     now.push(`${pick} <b>${prev?prev[1]+' → ':''}${lab} ${u?'상승':'하락'}</b> 진행(${st.slice(5)}~${days<=2?`, ${days}일째·확정 전`:''})`);
     const ref=(i,low)=>{const L=legs[legs.length-1-i];return L?px(L[3],low):null};
     const imp='12345'.includes(k),trendUp=imp?(k==='2'||k==='4'?!u:u):null;
+    eBull=!!(imp&&trendUp&&'123'.includes(k));
     let m='',r=null;
     if(imp&&trendUp){
       if(k==='1'){m='새 상승 1파 초기 — 2파 눌림이 1파 시작가 위에서 멈추는지 확인 후 진입 검토';r=['1파 시작',ref(0,true)];tone='g'}
@@ -681,8 +714,28 @@ function tsum(){const el=document.getElementById('tsum');if(!el)return;const N=b
   // 거래량 경고·최근 신호(5거래일)
   if(ddn[N]>=5){now.push(`<span class="r">분산일 ${ddn[N]}/4주(대량 매도 누적)</span>`);if(tone==='g')tone='y'}else if(ddn[N]>=3)now.push(`<span class="y">분산일 ${ddn[N]}/4주</span>`);
   const t5=bars[Math.max(0,N-4)].time,rec=[...new Map(markers.filter(x=>x.time>=t5).map(x=>[x.key,x])).values()];
-  if(rec.length)now.push('최근 신호 '+rec.map(x=>`${x.key}${SIGV[x.key]?`(${SIGV[x.key]})`:''}`).join('·'));
-  el.innerHTML=`<div><b>현재</b> ${now.join(' · ')}</div><div><b>대응</b> <span class="${tone}">${act.join(' · ')}</span> <small>· 자동 해석(매 빌드 갱신), 투자 권유 아님</small></div>`}
+  if(rec.length)now.push('최근 신호 '+rec.map(x=>`${x.key.startsWith('ms')?x.text:x.key}${SIGV[x.key]?`(${SIGV[x.key]})`:''}`).join('·'));
+  // 오닐: 시장 상태(지수 분산일·반등 시도·확인일)·패턴·RS·근거 일치
+  const it=CUR||{},id=it.id||'',mk=mkOf(id),isIX=id.startsWith('IX:'),isSEC=id.startsWith('SEC:');
+  const ms=isIX?(it.ms||null):(mk&&MKT[mk]?MKT[mk].main:null),br=mk&&MKT[mk]?MKT[mk].br:null;
+  let mline='';
+  if(ms&&ms.st){const sc=ms.st==='상승 확인'?'g':ms.st==='조정 중'?'r':'y';
+    mline=`<div><b>시장</b> ${isIX?it.n:(mk==='KR'?'코스피':'S&P500')} <span class="${sc}"><b>${ms.st}${ms.k?` ${ms.k}일째`:''}</b></span> · 분산일 ${ms.dd}/4주 · 50일선 ${ms.ma50?'위':'아래'} · 최근 고점 대비 −${ms.dd_pct}%${ms.ftd?` · 마지막 확인일 ${ms.ftd.slice(5)}`:''}${br&&!isIX?` · 시장 폭: 50일선 위 ${br.a50}%·신고가 ${br.nh}·신저가 ${br.nl}`:''}${ms.st==='반등 시도'?' <small>(4일째 이후 +1.25%↑·거래량 증가 = 확인일)</small>':''}</div>`}
+  const PT=J?.pat;let ck='';
+  if(it.rs&&!isSEC)now.push(`RS <b>${it.rs}</b>${it.rs>=80?'(주도주 후보)':''}`);
+  if(PT){now.push(`패턴 <b>${PT.k}</b>(${PT.stg}번째 바닥) ${PT.wk}주·깊이 ${PT.dp}% — <b>${PT.st}</b>${PT.gap!=null?`, 피벗 ${P(PT.pv)}까지 ${PT.gap}%`:` · 피벗 ${P(PT.pv)}`}`);
+    ck=`<details style="display:inline"><summary style="display:inline;cursor:pointer;color:#4dd0e1">패턴 점검</summary> ${PT.ck.map(([t,o])=>`<span class="${o?'g':'r'}">${o?'✓':'✗'} ${t}</span>`).join(' · ')}</details>`;
+    const upm=!!(ms&&ms.st==='상승 확인'),stop=PT.st==='형성 중'?` · 돌파 뒤 손절 기준 ${P(PT.stop)}(피벗 −8%)`:` · 손절 <b>${P(PT.stop)}</b>`;
+    const pa=PT.st==='형성 중'?(upm?`피벗 ${P(PT.pv)} 돌파 + 거래량 +40%↑ 확인 시 매수 검토`:`바닥 형성 중 — 시장이 '${ms?ms.st:'-'}'이라 돌파 매수는 확인일 뒤로`)+stop
+      :PT.st==='매수 구간'?`피벗 위 5% 이내(매수 구간)${upm?'':` — 시장 '${ms?ms.st:'-'}', 돌파 실패율 높음`}`+stop
+      :PT.st==='돌파 실패'?'돌파 실패(피벗 아래 복귀) — 정리·관망':'피벗 +5% 넘게 올라 추격 매수 자제';
+    act.push(`[오닐] ${pa}`)}
+  else if(!isIX&&!isSEC&&mk)now.push('패턴 없음');
+  if(isSEC&&it.ss){const z=it.ss;now.push(`섹터 RS <b>${it.rs??'-'}</b> · 소속 ${z.n}종목 중 바닥 형성 ${z.base}·돌파 ${z.brk}·실패 ${z.fail}·RS80↑ ${z.rs80}`);
+    if(z.lead?.length)act.push('선도 '+z.lead.map(([lid,n,rs,pk])=>`<a class="lk" onclick="go('${lid}')">${n}</a>(RS ${rs}${pk?`·${pk[0]} ${pk[1]}`:''})`).join(', '))}
+  if(!isIX&&!isSEC&&mk){const evs=[['엘리엇',eBull],['오닐',!!(PT&&['형성 중','매수 구간'].includes(PT.st)&&(it.rs||0)>=70)],['ADX',adx[N]>=20&&dir[N]>0],['시장',!!(ms&&ms.st==='상승 확인')]];
+    const ok=evs.filter(x=>x[1]).length;act.push(`근거 <b>${'●'.repeat(ok)}${'○'.repeat(4-ok)}</b>${ok<4?` <small>(아님: ${evs.filter(x=>!x[1]).map(x=>x[0]).join('·')})</small>`:''}`)}
+  el.innerHTML=`${mline}<div><b>현재</b> ${now.join(' · ')} ${ck}</div><div><b>대응</b> <span class="${tone}">${act.join(' · ')}</span> <small>· 자동 해석(매 빌드 갱신), 투자 권유 아님</small></div>`}
 tsum();
 const allMarkers=applyWaves(); // A 통합·C 하단에 신호 + 엘리엇 파동
 
@@ -720,7 +773,7 @@ window.__chart={N,bars,adx,pdi,mdi,score,sq,ew,markers,ddn,churn,bigd}; // 점�
 // ---------- 시작 ----------
 (async()=>{
   await unlock(); // 코드 확인 전에는 데이터를 불러오지 않음
-  try{const j=await (await fetch(DATA+'universe.json',{cache:'no-cache'})).json();U=j.items;UPD=j.updated;}
+  try{const j=await (await fetch(DATA+'universe.json',{cache:'no-cache'})).json();U=j.items;UPD=j.updated;MKT=j.mkt||{};}
   catch(e){document.getElementById('loading').textContent='종목 목록을 불러오지 못했습니다: '+e;return}
   try{VAL=await (await fetch(DATA+'validation.json',{cache:'no-cache'})).json()}catch(e){VAL=null}
   const want=new URLSearchParams(location.search).get('s')||localStorage.getItem('last')||'KR:005930';
@@ -736,14 +789,14 @@ window.__chart={N,bars,adx,pdi,mdi,score,sq,ew,markers,ddn,churn,bigd}; // 점�
   document.title=`${it.n} · 3축 차트`;
   document.getElementById('tinfo').innerHTML=`<b>${it.n}</b><span class="muted">${it.id.startsWith('SEC')?'':code} · ${it.m}</span>
     <a class="lk" id="tsec">${it.s}</a><span>${it.d} 종가 <b>${fmtP(it.c)}</b> <span class="${it.ch>=0?'up':'dn'}">${it.ch>=0?'+':''}${it.ch}%</span></span>
-    ${rgBadge(it.rg)}<span>점수 ${it.sc} · 부호ADX ${it.sa}</span>${(it.fl||[]).length?`<span class="wk">⚠ ${it.fl.join('·')}</span>`:''}${(it.wv||[]).length?`<span>파동 ${it.wv.map(([d,l,st])=>`<b style="color:${DEGC0[d]||'#ccc'}" title="${d} — ${st}부터 진행">${l}</b>`).join(' ')}</span>`:''}${it.dd!=null?`<span class="${it.dd>=3?'wk':''}" title="최근 4주(20거래일) 분산일 수 — 3~5회면 보유 재평가·현금 확보(오닐)">분산일 ${it.dd}/4주</span>`:''}${it.sr!=null?`<span title="거래량 중 공매도 비중 (미국 FINRA 보고분 / 국내 KRX)">공매도 ${it.sr}%</span>`:''}
+    ${rgBadge(it.rg)}<span>점수 ${it.sc} · 부호ADX ${it.sa}</span>${it.rs?`<span title="상대 강도: 최근 12개월(최근 분기 2배) 수익률의 시장 내 백분위 1~99, 80↑ = 주도주 후보${it.id.startsWith('SEC')?' (섹터: 소속 종목 평균의 섹터 간 백분위)':''}">RS <b style="color:${it.rs>=80?'#7fdca8':it.rs<40?'#ff8a80':'#e8eaed'}">${it.rs}</b></span>`:''}${(it.fl||[]).length?`<span class="wk">⚠ ${it.fl.join('·')}</span>`:''}${(it.wv||[]).length?`<span>파동 ${it.wv.map(([d,l,st])=>`<b style="color:${DEGC0[d]||'#ccc'}" title="${d} — ${st}부터 진행">${l}</b>`).join(' ')}</span>`:''}${it.dd!=null?`<span class="${it.dd>=3?'wk':''}" title="최근 4주(20거래일) 분산일 수 — 3~5회면 보유 재평가·현금 확보(오닐)">분산일 ${it.dd}/4주</span>`:''}${it.sr!=null?`<span title="거래량 중 공매도 비중 (미국 FINRA 보고분 / 국내 KRX)">공매도 ${it.sr}%</span>`:''}
     <span class="muted">갱신 ${new Date(UPD).toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}</span>`;
   document.getElementById('tsec').onclick=()=>{document.getElementById('ssec').value=it.s;showTab('S')};
   try{const j=await (await fetch(pathOf(it),{cache:'no-cache'})).json();
     const bars=j.t.map((t,i)=>({time:t,open:j.o[i],high:j.h[i],low:j.l[i],close:j.c[i],volume:j.v[i],...(j.sr&&j.sr[i]!=null?{sr:j.sr[i]}:{})}));
     const mk=mkOf(it.id);SIGV={};if(mk&&VAL?.stats?.[mk]?.sig)for(const[k,x]of Object.entries(VAL.stats[mk].sig))SIGV[k]=x.v;
     document.getElementById('sigv').innerHTML=mk&&VAL?`오늘 검증(${mk==='KR'?'국내':'미국'} 2년·앞뒤 절반): `+Object.entries(SIGV).map(([k,v])=>`${k} <span class="${VCLS[v]}">${v}</span>`).join(' · ')+' — 유효 신호만 원래 색, 약함은 흐리게, 역효과는 회색✕':'지표·지수는 신호 검증 대상이 아닙니다(종목 기준 검증)';
-    document.getElementById('loading').remove();render(bars,j.ew);}
+    document.getElementById('loading').remove();render(bars,j.ew,j);}
   catch(e){document.getElementById('loading').textContent='시세를 불러오지 못했습니다: '+e}
 })();
 if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js');

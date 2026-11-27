@@ -19,6 +19,7 @@ import yfinance as yf
 
 from indicators import summary, forward_stats, BULL, BEAR
 import elliott
+import oneil
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -473,7 +474,7 @@ def sector_index(member_bars):
     return out
 
 
-def write_bars(path, bars, digits, ew=None):
+def write_bars(path, bars, digits, ew=None, extra=None):
     r = (lambda x: round(x, digits)) if digits else (lambda x: int(round(x)))
     obj = {'t': [b['time'] for b in bars], 'o': [r(b['open']) for b in bars], 'h': [r(b['high']) for b in bars],
            'l': [r(b['low']) for b in bars], 'c': [r(b['close']) for b in bars], 'v': [int(b['volume']) for b in bars]}
@@ -481,6 +482,9 @@ def write_bars(path, bars, digits, ew=None):
         obj['sr'] = [b.get('sr') for b in bars]
     if ew:
         obj['ew'] = ew
+    for k, v in (extra or {}).items():
+        if v:
+            obj[k] = v                                       # 오닐: pat(바닥 패턴)·os(신호)·ms(시장 상태 사건)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, 'w') as f:
         json.dump(obj, f, separators=(',', ':'), ensure_ascii=False)
@@ -624,6 +628,10 @@ def main():
     # 4) 요약·검증·쓰기
     kept, samples, quality = [], {'KR': [], 'US': []}, defaultdict(list)
     last_day = {}
+    # 오닐 시장 상태(지수): 한국 = 코스피(+코스닥), 미국 = S&P500(+나스닥)
+    MS = {k: oneil.market_state(bars.get(f'IX:{k}') or []) for k in ('KS11', 'KQ11', 'GSPC', 'IXIC')}
+    bear = {'KR': (MS['KS11'] or {}).get('st') not in ('상승 확인',), 'US': (MS['GSPC'] or {}).get('st') not in ('상승 확인',)}
+    rsraw = {}
     for it in items:
         b = bars.get(it['id']) or []
         mk, code = it['id'].split(':')
@@ -634,7 +642,20 @@ def main():
             continue
         fn = re.sub(r'[^A-Za-z0-9.\-]', '_', code)
         it['f'] = f'{mk}/{fn}'
-        write_bars(os.path.join(out, 'data', 'p', mk, fn + '.json'), b, 0 if mk == 'KR' else 2, EW.get(it['id']))
+        extra = {}
+        if mk in ('KR', 'US') and it['m'] != 'ETF':
+            osg = oneil.signals(b)
+            r['sigs'] = sorted(r['sigs'] + osg)              # 검증에 함께 넣음
+            extra['os'] = [[b[i]['time'], k] for i, k in osg]
+            pat = oneil.base_now(b, bear[mk])
+            if pat:
+                extra['pat'] = pat
+                it['pk'] = [pat['k'], pat['st']]
+            rsraw[it['id']] = oneil.rs_raw([x['close'] for x in b])
+        if mk == 'IX' and code in MS and MS[code]:
+            extra['ms'] = MS[code]['ev']
+            it['ms'] = {k: v for k, v in MS[code].items() if k != 'ev'}
+        write_bars(os.path.join(out, 'data', 'p', mk, fn + '.json'), b, 0 if mk == 'KR' else 2, EW.get(it['id']), extra)
         it.update(sm)
         it['wv'] = EW[it['id']]['cur'] if it['id'] in EW else []
         if mk == 'SEC':          # 섹터 순위 변동용: 1·5·20거래일 전 부호ADX (오늘 sa 와 같은 계산)
@@ -654,9 +675,36 @@ def main():
         if mk in last_day and it['d'] < last_day[mk]:
             it['fl'].append('지연'); quality['지연'].append(it['id'])
 
+    # 오닐 RS(시장별 백분위 1~99) · 섹터 RS · 섹터 요약 · 시장 폭
+    for mk in ('KR', 'US'):
+        rk = oneil.pct_rank({k: v for k, v in rsraw.items() if k.startswith(mk + ':')})
+        for it in kept:
+            if it['id'] in rk:
+                it['rs'] = rk[it['id']]
+        mem = defaultdict(list)
+        for it in kept:
+            if it['id'].startswith(mk + ':') and it['m'] != 'ETF':
+                mem[it['s']].append(it)
+        sraw = {s_: sum(rsraw[x['id']] for x in v if rsraw.get(x['id']) is not None) / max(1, sum(1 for x in v if rsraw.get(x['id']) is not None)) for s_, v in mem.items()}
+        srk = oneil.pct_rank(sraw)
+        for it in kept:
+            if it['id'].startswith(f'SEC:{mk}') and it['s'] in mem:
+                v = mem[it['s']]
+                lead = sorted((x for x in v if x.get('rs')), key=lambda x: -x['rs'])[:3]
+                it['rs'] = srk.get(it['s'])
+                it['ss'] = {'n': len(v), 'base': sum(1 for x in v if x.get('pk') and x['pk'][1] == '형성 중'),
+                            'brk': sum(1 for x in v if x.get('pk') and (x['pk'][1] == '매수 구간' or x['pk'][1].startswith('확장'))),
+                            'fail': sum(1 for x in v if x.get('pk') and x['pk'][1] == '돌파 실패'),
+                            'rs80': sum(1 for x in v if (x.get('rs') or 0) >= 80),
+                            'lead': [[x['id'], x['n'], x['rs'], x.get('pk')] for x in lead]}
+    MKT = {}
+    for mk, (a_, b_) in (('KR', ('KS11', 'KQ11')), ('US', ('GSPC', 'IXIC'))):
+        ser = [bars[it['id']] for it in kept if it['id'].startswith(mk + ':') and it['m'] != 'ETF' and it['id'] in bars]
+        MKT[mk] = {'main': {k: v for k, v in (MS[a_] or {}).items() if k != 'ev'}, 'sub': {k: v for k, v in (MS[b_] or {}).items() if k != 'ev'},
+                   'br': oneil.breadth(ser)}
     now = dt.datetime.now(dt.timezone.utc).isoformat(timespec='minutes')
     with open(os.path.join(out, 'data', 'universe.json'), 'w') as f:
-        json.dump({'updated': now, 'items': kept}, f, separators=(',', ':'), ensure_ascii=False)
+        json.dump({'updated': now, 'mkt': MKT, 'items': kept}, f, separators=(',', ':'), ensure_ascii=False)
     stock_n = {mk: sum(1 for it in items if it['id'].startswith(mk + ':')) for mk in ('KR', 'US')}
     val = {'updated': now, 'base': last_day,
            'quality': {k: {'n': len(v), 'ids': v[:40]} for k, v in quality.items()},
