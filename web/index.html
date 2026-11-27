@@ -47,6 +47,7 @@ select.tab{padding:6px 8px}
 .dist span{display:flex;align-items:center;justify-content:center;font-size:11px;color:#fff;white-space:nowrap;overflow:hidden}
 .tw{overflow:auto;max-height:70vh;border:1px solid #1d2028;border-radius:6px}
 table{border-collapse:collapse;font-size:12.5px;width:100%;min-width:720px}
+.og{margin:14px 0 4px;font-size:14px;color:#e8eaed}.og small{color:#7d8592;font-weight:400}.ocards{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:8px;max-width:1200px}.ocard{background:#151922;border:1px solid #232937;border-radius:8px;padding:8px 12px}.ocard b.st{font-size:16px}.osw{display:flex;gap:6px;margin:4px 0 8px}.otw{overflow-x:auto;max-width:1200px}
 th,td{padding:6px 8px;border-bottom:1px solid #1d2028;text-align:right;white-space:nowrap}
 th{position:sticky;top:0;background:#161a21;color:#9aa1ad;font-weight:500;cursor:pointer}
 td:first-child,th:first-child{text-align:left}
@@ -95,6 +96,7 @@ tr.det>td{background:#12161d;white-space:normal;text-align:left;cursor:default}
   <button class="tab" data-v="B">B 3단</button>
   <button class="tab" data-v="C">C 산점도</button>
   <button class="tab" data-v="S">섹터</button>
+  <button class="tab" data-v="O" title="오닐 주목 항목 — 한국장·미국장 / 지수·ETF·종목">오닐</button>
   <button class="tab" data-v="V">검증</button>
   <button class="tab" id="lockbtn" title="잠금(접속 코드 다시 입력)" onclick="lockNow()">🔒</button>
 </div></header>
@@ -161,6 +163,7 @@ tr.det>td{background:#12161d;white-space:normal;text-align:left;cursor:default}
   대장주 = 섹터 내 시가총액 상위(미국은 20일 평균 거래대금 상위로 대체). 대세주 = 강세 국면이면서 20일·60일 수익률이 모두 플러스인 종목 중 60일 수익률 상위(데이터 이상 종목 제외).
   순위 = 섹터지수 부호ADX 순. 어제·1주·1달 = 1·5·20거래일 전 같은 기준의 순위와 지금까지 이동(▲ 올라옴 · ▼ 내려감 · 5계단 이상 굵게). 상태 표시이며 예측 아님.</div>
 </section>
+<section id="O" class="view"><div id="obody" class="desc">불러오는 중…</div></section>
 <section id="V" class="view"><div id="vbody" class="desc">검증 데이터를 불러오는 중…</div></section>
 <section id="S" class="view">
   <div class="sctl">
@@ -247,7 +250,7 @@ function showTab(v,push=true){
   if(push&&CUR&&new URLSearchParams(location.search).get('t')!==v)history.pushState({d:depth()+1},'',navUrl(CUR.id,v));
   document.querySelectorAll('header .tab').forEach(x=>x.classList.toggle('on',x.dataset.v===v));
   document.querySelectorAll('.view').forEach(s=>s.classList.toggle('on',s.id===v));
-  localStorage.setItem('tab',v);updBack();if(v==='C'&&window.onShowC)window.onShowC();if(v==='S')drawSector();if(v==='H')drawHome();if(v==='V')drawVal();}
+  localStorage.setItem('tab',v);updBack();if(v==='C'&&window.onShowC)window.onShowC();if(v==='S')drawSector();if(v==='H')drawHome();if(v==='V')drawVal();if(v==='O')drawOneil();}
 document.querySelectorAll('header .tab[data-v]').forEach(b=>b.onclick=()=>showTab(b.dataset.v));
 
 // ---------- 검색 ----------
@@ -356,6 +359,53 @@ function drawHome(){if(!U.length)return;const ix=U.filter(it=>it.id.startsWith('
   drawSecTable('KR');drawSecTable('US');}
 
 // ---------- 일일 검증 ----------
+// ---------- 오닐 주목 항목 (한국장·미국장 / 지수·ETF·종목) — 빌드(oneil.py) 결과 표시만 ----------
+let OMK=localStorage.getItem('omk')||'KR';
+function drawOneil(){const el=document.getElementById('obody');if(!el)return;if(!U.length){el.textContent='불러오는 중…';return}
+  const mk=OMK,M=MKT[mk]||{},g=mk==='KR'?'한국':'미국',V_=VAL?.stats?.[mk]?.sig||{};
+  const stc=st=>st==='상승 확인'?'#7fdca8':st==='조정 중'?'#ff8a80':'#ffd54f';
+  const card=(nm,x)=>x&&x.st?`<div class="ocard"><div class="muted">${nm}</div><b class="st" style="color:${stc(x.st)}">${x.st}${x.k?` ${x.k}일째`:''}</b>
+    <div>분산일 ${x.dd}/4주 · 50일선 ${x.ma50?'위':'아래'} · 최근 고점 대비 −${x.dd_pct}%${x.ftd?` · 마지막 확인일 ${x.ftd.slice(5)}`:''}</div></div>`:'';
+  const br=M.br?`<div class="ocard"><div class="muted">시장 폭 (${M.br.n}종목)</div><b class="st">50일선 위 ${M.br.a50}%</b><div>신고가 ${M.br.nh} · 신저가 ${M.br.nl}</div></div>`:'';
+  const vb=k=>V_[k]?` <span class="${VCLS[V_[k].v]||''}" title="2년 검증 판정">${V_[k].v}</span>`:'';
+  const pkTxt=it=>it.pk?`${it.pk[0]}`:'<span class="muted">-</span>';
+  const stTxt=it=>!it.pk?'':it.pk[1]==='형성 중'?`형성 중 <small class="muted">(피벗까지 ${it.pk[2]}%)</small>`:`${it.pk[1]}`;
+  const row=(it,cols)=>`<tr onclick="go('${it.id}')"><td>${it.n} <small class="muted">${it.id.split(':')[1]}</small></td>${cols.map(c=>`<td>${c(it)}</td>`).join('')}</tr>`;
+  const C_={sec:['섹터',it=>it.s||''],c:['종가',it=>fmtP(it.c)],ch:['등락',it=>pc(it.ch)],rs:['RS',it=>it.rs?`<b style="color:${it.rs>=80?'#7fdca8':it.rs<40?'#ff8a80':'#e8eaed'}">${it.rs}</b>`:'-'],
+    pk:['패턴',pkTxt],st:['상태',stTxt],pv:['피벗(대비)',it=>it.pk?`${fmtP(it.pk[4])} <small class="muted">${it.pk[5]>=0?'+':''}${it.pk[5]}%</small>`:''],stg:['바닥',it=>it.pk?`<span style="color:${it.pk[3]>=3?'#ff8a80':'#e8eaed'}">${it.pk[3]}번째</span>`:''],
+    os:['최근 오닐 신호',it=>it.osl?`${it.osl[1]}${vb(it.osl[1])} <small class="muted">${it.osl[0].slice(5)}</small>`:''],rg:['국면',it=>rgBadge(it.rg)],
+    ms:['오닐 시장 상태',it=>it.ms?`<b style="color:${stc(it.ms.st)}">${it.ms.st}${it.ms.k?` ${it.ms.k}일째`:''}</b>`:'<span class="muted">-</span>'],dd:['분산일',it=>it.dd!=null?`${it.dd}/4주`:'']};
+  const tbl=(list,keys,lim=30)=>list.length?`<div class="otw"><table><thead><tr><th>이름</th>${keys.map(k=>`<th>${C_[k][0]}</th>`).join('')}</tr></thead><tbody>${list.slice(0,lim).map(it=>row(it,keys.map(k=>C_[k][1]))).join('')}</tbody></table></div>${list.length>lim?`<div class="muted">외 ${list.length-lim}개</div>`:''}`:'<div class="muted">해당 없음</div>';
+  const byRS=(a,b)=>(b.rs||0)-(a.rs||0);
+  const ixs=U.filter(it=>it.id.startsWith('IX:')&&it.g===g);
+  const etf=U.filter(it=>it.id.startsWith(mk+':')&&it.m==='ETF').sort(byRS);
+  const st=U.filter(it=>it.id.startsWith(mk+':')&&it.m!=='ETF');
+  const GN={B:'①',N:'②',R:'③',S:'④',W:'⑤'},gtxt=x=>x?[...x].map(g=>GN[g]).join(''):'없음';
+  const inG=g=>it=>(it.grp||'').includes(g);
+  const G=[['B','① 매수 구간','피벗 돌파 뒤 +5% 이내 · 손절 −8%',st.filter(inG('B')).sort(byRS)],
+    ['N','② 피벗 근접','바닥 형성 중, 피벗까지 5% 이내 — 돌파 + 거래량 +40%↑ 대기',st.filter(inG('N')).sort((a,b)=>(a.pk?.[2]??99)-(b.pk?.[2]??99))],
+    ['R','③ 최근 바닥돌파','최근 10거래일 ◆바닥돌파 신호',st.filter(inG('R')).sort(byRS)],
+    ['S','④ RS 주도주','RS 90↑ · 상승 추세 — 하락장에서 버티는 다음 주도주 후보',st.filter(inG('S')).sort(byRS)],
+    ['W','⑤ 경고','돌파 실패 · 최근 10일 최후고점·50일↓·반등실패',st.filter(inG('W')).sort(byRS)]];
+  C_.gi=['편입(경과·편입 후)',it=>{const x=it.gi&&Object.values(it.gi)[0];return x?`${x[3]?'이전부터':x[0].slice(5)} · ${x[1]}일 · ${x[2]!=null?pc(x[2]):'-'}`:''}];
+  C_.g3=['3일 전→지금',it=>it.g3==null?'<span class="muted">-</span>':it.g3===it.grp?`<span class="muted">${gtxt(it.grp)} 유지</span>`:`${gtxt(it.g3)} → <b>${gtxt(it.grp)}</b>`];
+  C_.c3=['3일 %',it=>it.c3!=null?pc(it.c3):''];
+  C_.wv=['파동(3일)',it=>it.wst?`${it.wst[0]} ${it.wst[2]?'<span class="g" title="3영업일 유지">✓</span>':`<span class="y" title="확정 전">△${it.wst[3]?` (전 ${it.wst[3]})`:''}</span>`}`:''];
+  const SK=['sec','c','ch','rs','pk','st','pv','stg','gi','g3','c3','wv','os','rg'];
+  const GS=M.grp,gs=GS?.g||{};
+  const fcell=(x,w)=>x?`<td>${x[0]>=0?'+':''}${x[0]}% <small class="muted">${w?'하락':'적중'} ${x[1]}% · 기준 대비 ${x[3]!=null?(x[3]>=0?'+':'')+x[3]+'%p':'-'}</small></td>`:'<td class="muted">-</td>';
+  const perf=GS?`<h3 class="og" style="font-size:13px">묶음 성과 <small>${GS.from?GS.from.slice(5):''}~ ${GS.days}영업일 기록 · 새로 편입된 날 종가 기준 이후 수익률(⑤는 하락 적중) · 시장 기준(전 종목 평균) 3일 ${GS.base?.[3]??'-'}% · 20일 ${GS.base?.[20]??'-'}%</small></h3>
+    <div class="otw"><table><thead><tr><th>묶음</th><th>편입 수</th><th>3일 뒤</th><th>5일 뒤</th><th>10일 뒤</th><th>20일 뒤</th></tr></thead><tbody>${G.map(([g,t])=>{const x=gs[g]||{};return `<tr><td>${t}</td><td>${x.n??0}</td>${[3,5,10,20].map(k=>fcell(x['f'+k],g==='W')).join('')}</tr>`}).join('')}</tbody></table></div>`:'';
+  const chgTxt=g=>{const c=GS?.chg?.[g];if(!c||!GS.d3)return'';const lk=([id,n,ng])=>`<a class="lk" onclick="go('${id}')">${n}</a>${ng!=null?`<small class="muted">→${gtxt(ng)}</small>`:''}`;
+    return `<div class="desc">최근 3영업일(${GS.d3.slice(5)} 이후): 신규 <b>${c.in.length}</b> · 이탈 <b>${c.out.length}</b>${c.out.length?` — 이탈: ${c.out.slice(0,12).map(lk).join(', ')}${c.out.length>12?' 외':''}`:''}</div>`};
+  el.innerHTML=`<div class="osw"><button class="tab ${mk==='KR'?'on':''}" data-m="KR">한국장</button><button class="tab ${mk==='US'?'on':''}" data-m="US">미국장</button>
+    <span class="muted" style="align-self:center">오닐 기준 주목 항목 · 매 빌드 자동 갱신 · 행을 누르면 차트로 이동 · 투자 권유 아님</span></div>
+    <div class="ocards">${card(mk==='KR'?'코스피':'S&P500',M.main)}${card(mk==='KR'?'코스닥':'나스닥',M.sub)}${br}</div>
+    <div class="desc" style="margin-top:6px">${M.main?.st&&M.main.st!=='상승 확인'?'<span class="wk">시장이 \'상승 확인\'이 아님 — 돌파 매수는 반등 확인일(4일째 이후 +1.25%↑·거래량 증가) 뒤로. 아래 목록은 감시용</span>':'시장 상승 확인 — 돌파 신호 유효 구간'}</div>
+    <h3 class="og">지수 <small>${ixs.length}개 · 오닐 시장 상태는 대표 지수 기준</small></h3>${tbl(ixs,['c','ch','ms','dd','pk','st','rg'])}
+    <h3 class="og">ETF <small>${etf.length}개 · RS = ETF끼리 백분위</small></h3>${etf.length?tbl(etf.filter(it=>it.pk||it.osl||(it.rs||0)>=70),SK):`<div class="muted">${mk==='KR'?'국내 ETF는 수집 목록에 없음':'ETF 자료 없음'}</div>`}
+    <h3 class="og">종목 <small>${st.length}개 중 · 파동 ✓ = 라벨·시작일 3영업일 유지(확정), △ = 확정 전</small></h3>${perf}${G.map(([g,t,d,l])=>`<h3 class="og" style="font-size:13px">${t} <small>${l.length}개 · ${d}</small></h3>${chgTxt(g)}${tbl(l,SK)}`).join('')}`;
+  el.querySelectorAll('.osw .tab').forEach(b=>b.onclick=()=>{OMK=b.dataset.m;localStorage.setItem('omk',OMK);drawOneil()});}
 async function drawVal(){const el=document.getElementById('vbody');
   if(!VAL){try{VAL=await (await fetch(DATA+'validation.json',{cache:'no-cache'})).json()}catch(e){el.textContent='검증 데이터 없음: '+e;return}}
   const v=VAL,q=v.quality||{};
@@ -692,10 +742,11 @@ function tsum(){const el=document.getElementById('tsum');if(!el)return;const N=b
   const big=(ew?.cur||[])[0];if(big)now.push(`큰 흐름 <b>${big[0]} ${big[1]}</b>(${big[2].slice(2)}~)`);
   if(pick){const legs=lv[pick],cur=legs[legs.length-1],[,lab,,st,up]=cur,k=keyOf(lab),u=!!up,prev=legs[legs.length-2];
     const days=N-(dayIdx.get(snapT(st))??N);
-    now.push(`${pick} <b>${prev?prev[1]+' → ':''}${lab} ${u?'상승':'하락'}</b> 진행(${st.slice(5)}~${days<=2?`, ${days}일째·확정 전`:''})`);
+    const ws=CUR?.wst,conf=ws?ws[2]===1:days>=3;   // 파동 확정 = 라벨·시작일이 3영업일 유지(또는 시작이 3영업일 이전)
+    now.push(`${pick} <b>${prev?prev[1]+' → ':''}${lab} ${u?'상승':'하락'}</b> 진행(${st.slice(5)}~, ${conf?'<span class="g">3영업일 확정</span>':`<span class="y">확정 전${ws&&ws[3]?` · 3일 전 ${ws[3]}`:` · ${days}일째`}</span>`})`);
     const ref=(i,low)=>{const L=legs[legs.length-1-i];return L?px(L[3],low):null};
     const imp='12345'.includes(k),trendUp=imp?(k==='2'||k==='4'?!u:u):null;
-    eBull=!!(imp&&trendUp&&'123'.includes(k));
+    eBull=!!(imp&&trendUp&&'123'.includes(k))&&(CUR?.wst?CUR.wst[2]===1:days>=3);   // 확정된 파동만 근거로 셈
     let m='',r=null;
     if(imp&&trendUp){
       if(k==='1'){m='새 상승 1파 초기 — 2파 눌림이 1파 시작가 위에서 멈추는지 확인 후 진입 검토';r=['1파 시작',ref(0,true)];tone='g'}
@@ -731,6 +782,8 @@ function tsum(){const el=document.getElementById('tsum');if(!el)return;const N=b
       :PT.st==='돌파 실패'?'돌파 실패(피벗 아래 복귀) — 정리·관망':'피벗 +5% 넘게 올라 추격 매수 자제';
     act.push(`[오닐] ${pa}`)}
   else if(!isIX&&!isSEC&&mk)now.push('패턴 없음');
+  if(it.grp){const GN={B:'① 매수 구간',N:'② 피벗 근접',R:'③ 최근 바닥돌파',S:'④ RS 주도주',W:'⑤ 경고'};
+    now.push('오닐 묶음 '+[...it.grp].map(g=>{const x=it.gi?.[g];return `<b>${GN[g]}</b>${x?`(${x[3]?'기록 시작 전부터':x[0].slice(5)+' 편입'} · ${x[1]}영업일째${x[2]!=null?` · 편입 후 ${x[2]>=0?'+':''}${x[2]}%`:''})`:''}`}).join(', ')+(it.g3!=null&&it.g3!==it.grp?` <small>(3영업일 전: ${it.g3?[...it.g3].map(g=>GN[g]).join(', '):'없음'})</small>`:''))}
   if(isSEC&&it.ss){const z=it.ss;now.push(`섹터 RS <b>${it.rs??'-'}</b> · 소속 ${z.n}종목 중 바닥 형성 ${z.base}·돌파 ${z.brk}·실패 ${z.fail}·RS80↑ ${z.rs80}`);
     if(z.lead?.length)act.push('선도 '+z.lead.map(([lid,n,rs,pk])=>`<a class="lk" onclick="go('${lid}')">${n}</a>(RS ${rs}${pk?`·${pk[0]} ${pk[1]}`:''})`).join(', '))}
   if(!isIX&&!isSEC&&mk){const evs=[['엘리엇',eBull],['오닐',!!(PT&&['형성 중','매수 구간'].includes(PT.st)&&(it.rs||0)>=70)],['ADX',adx[N]>=20&&dir[N]>0],['시장',!!(ms&&ms.st==='상승 확인')]];

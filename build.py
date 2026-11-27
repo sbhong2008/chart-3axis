@@ -308,6 +308,28 @@ def lock_sectors(uni, mk, update=False, diff_only=False):
     apply_rules(uni, mk, lock)                               # 승인된 재분류 규칙(나누기·합치기·이름 바꾸기)
 
 
+# ---------- 오닐 묶음 시계열 기록 (저장소에 커밋하지 않고, 배포된 직전 파일을 받아 오늘을 덧붙임) ----------
+SITE_URL = os.environ.get('SITE_URL', 'https://sbhong2008.github.io/chart-3axis/')
+HIST_BACK, HIST_KEEP = 40, 120                               # 기록 없을 때 다시 계산할 영업일 · 보관 영업일
+
+
+def load_hist():
+    try:
+        req = urllib.request.Request(SITE_URL + 'data/oneil_hist.json', headers={'User-Agent': 'Mozilla/5.0'})
+        h = json.load(urllib.request.urlopen(req, timeout=30))
+        log('오닐 묶음 기록 불러옴', {k: len(v) for k, v in h.get('g', {}).items()})
+    except Exception as e:
+        log('오닐 묶음 기록 없음 → 새로 만듦', e)
+        h = {}
+    h.setdefault('g', {}); h.setdefault('w', {})
+    return h
+
+
+def save_hist(out, h):
+    with open(os.path.join(out, 'data', 'oneil_hist.json'), 'w', encoding='utf-8') as f:
+        json.dump(h, f, separators=(',', ':'), ensure_ascii=False)
+
+
 # ---------- 시세 ----------
 EW = {}      # id → 엘리엇 다층 파동(elliott.analyze)
 LSTART = None  # 장기(주봉 등급용) 시작일 — main 에서 설정
@@ -631,7 +653,8 @@ def main():
     # 오닐 시장 상태(지수): 한국 = 코스피(+코스닥), 미국 = S&P500(+나스닥)
     MS = {k: oneil.market_state(bars.get(f'IX:{k}') or []) for k in ('KS11', 'KQ11', 'GSPC', 'IXIC')}
     bear = {'KR': (MS['KS11'] or {}).get('st') not in ('상승 확인',), 'US': (MS['GSPC'] or {}).get('st') not in ('상승 확인',)}
-    rsraw = {}
+    rsraw, rsetf = {}, {}
+    GB = {}                                                  # 묶음 시계열용: id → (일봉, 지표, 오닐 신호)
     for it in items:
         b = bars.get(it['id']) or []
         mk, code = it['id'].split(':')
@@ -643,15 +666,25 @@ def main():
         fn = re.sub(r'[^A-Za-z0-9.\-]', '_', code)
         it['f'] = f'{mk}/{fn}'
         extra = {}
-        if mk in ('KR', 'US') and it['m'] != 'ETF':
-            osg = oneil.signals(b)
-            r['sigs'] = sorted(r['sigs'] + osg)              # 검증에 함께 넣음
-            extra['os'] = [[b[i]['time'], k] for i, k in osg]
-            pat = oneil.base_now(b, bear[mk])
+        omk = mk if mk in ('KR', 'US') else {'한국': 'KR', '미국': 'US'}.get(it.get('g')) if mk == 'IX' else None
+        if omk:                                              # 오닐: 종목·ETF = 신호·패턴·RS, 한·미 지수 = 패턴
+            if mk != 'IX':
+                osg = oneil.signals(b)
+                if it['m'] != 'ETF':
+                    r['sigs'] = sorted(r['sigs'] + osg)      # 검증에 함께 넣음(종목만)
+                extra['os'] = [[b[i]['time'], k] for i, k in osg]
+                last = [x for x in osg if x[0] >= len(b) - 10]
+                if last:
+                    it['osl'] = [b[last[-1][0]]['time'], last[-1][1]]   # 최근 10거래일 마지막 오닐 신호
+                (rsetf if it['m'] == 'ETF' else rsraw)[it['id']] = oneil.rs_raw([x['close'] for x in b])
+                if it['m'] != 'ETF':
+                    GB[it['id']] = (b, r, osg)
+            pat = oneil.base_now(b, bear[omk])
             if pat:
                 extra['pat'] = pat
-                it['pk'] = [pat['k'], pat['st']]
-            rsraw[it['id']] = oneil.rs_raw([x['close'] for x in b])
+                c_ = b[-1]['close']
+                it['pk'] = [pat['k'], pat['st'], pat.get('gap'), pat['stg'], pat['pv'],
+                            round((c_ / pat['pv'] - 1) * 100, 1)]   # [패턴, 상태, 피벗까지 %, n번째, 피벗, 피벗 대비 %]
         if mk == 'IX' and code in MS and MS[code]:
             extra['ms'] = MS[code]['ev']
             it['ms'] = {k: v for k, v in MS[code].items() if k != 'ev'}
@@ -676,6 +709,10 @@ def main():
             it['fl'].append('지연'); quality['지연'].append(it['id'])
 
     # 오닐 RS(시장별 백분위 1~99) · 섹터 RS · 섹터 요약 · 시장 폭
+    ek = oneil.pct_rank(rsetf)                               # ETF RS = ETF끼리 백분위
+    for it in kept:
+        if it['id'] in ek:
+            it['rs'] = ek[it['id']]
     for mk in ('KR', 'US'):
         rk = oneil.pct_rank({k: v for k, v in rsraw.items() if k.startswith(mk + ':')})
         for it in kept:
@@ -697,11 +734,109 @@ def main():
                             'fail': sum(1 for x in v if x.get('pk') and x['pk'][1] == '돌파 실패'),
                             'rs80': sum(1 for x in v if (x.get('rs') or 0) >= 80),
                             'lead': [[x['id'], x['n'], x['rs'], x.get('pk')] for x in lead]}
+    # 오닐 5묶음 + 시계열(배포된 직전 기록에 오늘을 덧붙임, 없으면 최근 40영업일 다시 계산) + 3영업일 전후 변동 + 파동 3영업일 확정
+    HIST = load_hist()
+    for it in kept:
+        if it['id'][:3] in ('KR:', 'US:') and it['m'] != 'ETF':
+            pk = it.get('pk') or [None, None, None]
+            it['grp'] = oneil.letters(pk[1], pk[2], (it.get('osl') or [None, None])[1], it.get('rs'), '↑' in (it.get('rg') or ''))
+    GSTAT = {}
+    for mk, ixid in (('KR', 'IX:KS11'), ('US', 'IX:GSPC')):
+        days = [x['time'] for x in bars.get(ixid, [])]
+        if not days:
+            continue
+        H = HIST['g'].setdefault(mk, {})
+        H[days[-1]] = {it['id']: it['grp'] for it in kept if it['id'].startswith(mk + ':') and it.get('grp')}
+        need = [d for d in days[-HIST_BACK:-1] if d not in H]
+        if need:
+            log(f'오닐 묶음 기록 {mk}: {len(need)}영업일 다시 계산')
+            ixb = bars[ixid]
+            ids = [i_ for i_ in GB if i_.startswith(mk + ':')]
+            tixm = {i_: {x['time']: n for n, x in enumerate(GB[i_][0])} for i_ in ids}
+            for d in need:
+                j = days.index(d)
+                ms_ = oneil.market_state(ixb[:j + 1])
+                bear_ = (ms_ or {}).get('st') != '상승 확인'
+                st_, raw = {}, {}
+                for i_ in ids:
+                    b_, r_, osg_ = GB[i_]
+                    k_ = tixm[i_].get(d)
+                    if k_ is None or k_ < 130:
+                        continue
+                    x = oneil.day_state(b_, [y['close'] for y in b_], r_['adx'], r_['dir'], osg_, k_, bear_)
+                    st_[i_], raw[i_] = x, x[3]
+                rk_ = oneil.pct_rank(raw)
+                H[d] = {i_: g for i_, x in st_.items() if (g := oneil.letters(x[0], x[1], x[2], rk_.get(i_), x[4]))}
+        for d in sorted(H)[:-HIST_KEEP]:
+            del H[d]
+        dts = sorted(H)
+        d3 = dts[-4] if len(dts) >= 4 else None              # 3영업일 전
+        ids = [i_ for i_ in GB if i_.startswith(mk + ':')]
+        closes = {i_: [y['close'] for y in GB[i_][0]] for i_ in ids}
+        tix = {i_: {y['time']: n for n, y in enumerate(GB[i_][0])} for i_ in ids}
+        GSTAT[mk] = oneil.group_stats(H, closes, tix)
+        chg = {g: {'in': [], 'out': []} for g, _ in oneil.GROUPS}
+        name = {it['id']: it['n'] for it in kept}
+        for it in kept:
+            if not it['id'].startswith(mk + ':') or it['id'] not in GB:
+                continue
+            now_g = it.get('grp', '')
+            gi = {}
+            for g in now_g:                                  # 편입일·경과 영업일·편입 후 수익률
+                p_ = len(dts) - 1
+                while p_ > 0 and g in H[dts[p_ - 1]].get(it['id'], ''):
+                    p_ -= 1
+                ent = dts[p_]
+                c0 = closes[it['id']][tix[it['id']][ent]] if ent in tix[it['id']] else None
+                gi[g] = [ent, len(dts) - 1 - p_, round((it['c'] / c0 - 1) * 100, 1) if c0 else None, p_ == 0]
+            if gi:
+                it['gi'] = gi
+            if d3:
+                old = H[d3].get(it['id'], '')
+                it['g3'] = old
+                i3 = tix[it['id']].get(d3)
+                if i3 is not None and closes[it['id']][i3]:
+                    it['c3'] = round((it['c'] / closes[it['id']][i3] - 1) * 100, 1)
+                for g in now_g:
+                    if g not in old:
+                        chg[g]['in'].append([it['id'], it['n']])
+                for g in old:
+                    if g not in now_g:
+                        chg[g]['out'].append([it['id'], it['n'], now_g])
+        GSTAT[mk]['chg'] = chg
+        GSTAT[mk]['d3'] = d3
+    # 파동 3영업일 확정: 마이너(없으면 첫 일봉 등급) 진행 중 라벨·시작일이 3영업일 전과 같거나, 시작이 3영업일 이전
+    W_ = HIST['w']
+    today_w = {}
+    for it in kept:
+        cur = {deg: (lab, st) for deg, lab, st in it.get('wv') or []}
+        c_ = cur.get('마이너') or cur.get('마이뉴트')
+        if c_:
+            today_w[it['id']] = list(c_)
+    dref = max((x['time'] for x in bars.get('IX:KS11', [])[-1:]), default=None)
+    for mk, ixid in (('KR', 'IX:KS11'), ('US', 'IX:GSPC')):
+        days = [x['time'] for x in bars.get(ixid, [])]
+        if days:
+            W_[days[-1]] = {**W_.get(days[-1], {}), **{k: v for k, v in today_w.items() if k.startswith(mk + ':')}}
+    for d in sorted(W_)[:-8]:
+        del W_[d]
+    for it in kept:
+        c_ = today_w.get(it['id'])
+        if not c_:
+            continue
+        mk = 'KR' if it['id'].startswith(('KR:', 'SEC:KR')) or it.get('g') == '한국' else 'US'
+        days = [x['time'] for x in bars.get('IX:KS11' if mk == 'KR' else 'IX:GSPC', [])]
+        d3 = days[-4] if len(days) >= 4 else None
+        prev = W_.get(d3, {}).get(it['id']) if d3 else None
+        old_enough = d3 is not None and c_[1] <= d3
+        stable = (prev == c_) if prev else None
+        it['wst'] = [c_[0], c_[1], 1 if (stable or (stable is None and old_enough)) else 0, prev[0] if prev and prev != c_ else None]
+    save_hist(out, HIST)
     MKT = {}
     for mk, (a_, b_) in (('KR', ('KS11', 'KQ11')), ('US', ('GSPC', 'IXIC'))):
         ser = [bars[it['id']] for it in kept if it['id'].startswith(mk + ':') and it['m'] != 'ETF' and it['id'] in bars]
         MKT[mk] = {'main': {k: v for k, v in (MS[a_] or {}).items() if k != 'ev'}, 'sub': {k: v for k, v in (MS[b_] or {}).items() if k != 'ev'},
-                   'br': oneil.breadth(ser)}
+                   'br': oneil.breadth(ser), 'grp': GSTAT.get(mk)}
     now = dt.datetime.now(dt.timezone.utc).isoformat(timespec='minutes')
     with open(os.path.join(out, 'data', 'universe.json'), 'w') as f:
         json.dump({'updated': now, 'mkt': MKT, 'items': kept}, f, separators=(',', ':'), ensure_ascii=False)

@@ -298,3 +298,66 @@ def breadth(series):
         nh += b[-1]['high'] >= max(x['high'] for x in w)
         nl += b[-1]['low'] <= min(x['low'] for x in w)
     return {'a50': round(a50 / tot * 100) if tot else None, 'nh': nh, 'nl': nl, 'n': tot}
+
+
+# ---------- 5) 종목 5묶음 · 시계열 기록 · 성과 분석 ----------
+GROUPS = [('B', '① 매수 구간'), ('N', '② 피벗 근접'), ('R', '③ 최근 바닥돌파'), ('S', '④ RS 주도주'), ('W', '⑤ 경고')]
+WARN = ('최후고점', '50일↓', '반등실패')
+
+
+def letters(st, gap, oskey, rs, up):
+    """묶음 글자: B 매수 구간 · N 피벗 근접(형성 중, 5% 이내) · R 최근 10일 바닥돌파 · S RS 90↑·상승 추세 · W 경고"""
+    g = ''
+    if st == '매수 구간':
+        g += 'B'
+    if st == '형성 중' and gap is not None and gap <= 5:
+        g += 'N'
+    if oskey == '바닥돌파':
+        g += 'R'
+    if (rs or 0) >= 90 and up:
+        g += 'S'
+    if st == '돌파 실패' or oskey in WARN:
+        g += 'W'
+    return g
+
+
+def day_state(b, C, adx, dr, osg, i, bear):
+    """i 번째 날 기준 상태(과거 다시 계산용): (패턴 상태, 피벗까지 %, 최근 10일 마지막 오닐 신호, RS 원점수, 상승 추세)"""
+    pat = base_now(b[:i + 1], bear)
+    ks = [k for j, k in osg if i - 9 <= j <= i]
+    up = adx[i] is not None and adx[i] >= 20 and dr[i] > 0
+    return (pat['st'] if pat else None, pat.get('gap') if pat else None, ks[-1] if ks else None, rs_raw(C[:i + 1]), up)
+
+
+def group_stats(H, closes, tix, horizons=(3, 5, 10, 20)):
+    """H = {날짜: {id: 묶음 글자}} 시계열 → 묶음별 편입 사건(전날 없던 묶음에 새로 들어온 날)의 이후 수익률·적중률·시장 기준 대비.
+    closes[id] = 종가 목록, tix[id] = {날짜: 번호}. 시장 기준 = 같은 날짜들의 전 종목 평균."""
+    dates = sorted(H)
+    ev = {g: [] for g, _ in GROUPS}
+    for p in range(1, len(dates)):
+        cur, prev = H[dates[p]], H[dates[p - 1]]
+        for id_, gs in cur.items():
+            for g in gs:
+                if g not in prev.get(id_, ''):
+                    ev[g].append((id_, dates[p]))
+    def fwd(id_, d, k):
+        i = tix.get(id_, {}).get(d)
+        C = closes.get(id_)
+        return C[i + k] / C[i] - 1 if i is not None and C and i + k < len(C) and C[i] else None
+    base = {}
+    for k in horizons:
+        v = [f for d in dates[1:] for id_ in closes if (f := fwd(id_, d, k)) is not None]
+        base[k] = sum(v) / len(v) if v else None
+    out = {}
+    for g, _ in GROUPS:
+        row = {'n': len(ev[g])}
+        for k in horizons:
+            v = [f for id_, d in ev[g] if (f := fwd(id_, d, k)) is not None]
+            if v:
+                avg = sum(v) / len(v)
+                hit = sum(1 for x in v if (x < 0 if g == 'W' else x > 0)) / len(v)
+                row[f'f{k}'] = [round(avg * 100, 2), round(hit * 100), len(v),
+                                round((avg - base[k]) * 100, 2) if base[k] is not None else None]
+        out[g] = row
+    return {'g': out, 'base': {k: round(v * 100, 2) for k, v in base.items() if v is not None},
+            'from': dates[0] if dates else None, 'days': len(dates)}
