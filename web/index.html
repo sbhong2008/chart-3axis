@@ -652,11 +652,17 @@ const firstT=bars[0].time,dayIdx=new Map(bars.map((b,i)=>[b.time,i]));
 const snapT=t=>{if(dayIdx.has(t))return t;const b=bars.find(x=>x.time>=t);return b?b.time:null};
 // 파동 라벨은 차트 표식(setMarkers) 대신 차트 위 덮개 층에 직접 그림: 같은 봉의 여러 등급을 한 상자에 줄 단위로 모으고,
 // 원 문자(①·Ⓐ)는 크게, 신호 표식(처닝·분산일 등)이 있는 봉은 그만큼 띄우고, 이웃 상자와 겹치면 위·아래로 밀어냄
+// 진행 중 파동이 '새 상위 파동의 첫 하위 파동'이면 상위 등급 문맥을 붙임: 예) C → (B)의 A 진행 (위 등급 경계라 C → A·A → A 가 원칙상 맞지만 문맥 없이는 오류처럼 보임)
+const DEGO=['사이클','프라이머리','인터미디에이트','마이너','마이뉴트'];
+function ctxLab(deg,lab,st){const lv=Object.fromEntries((ew?.lv||[]).map(([d,l])=>[d,l]));
+  for(let k=DEGO.indexOf(deg)-1;k>=0;k--){const L=lv[DEGO[k]];if(!L||!L.length)continue;const P=L[L.length-1];
+    if(P[2]&&P[3]===st&&P[1]!==lab)return `${P[1]}의 ${lab}`;if(P[2])break}
+  return lab}
 function waveGroups(){const on=degOn(),g=new Map();
   const add=(t,pos,deg,text)=>{const k=t+'|'+pos;if(!g.has(k))g.set(k,{time:t,pos,rows:[]});g.get(k).rows.push({deg,text})};
   for(const [deg,legs] of (ew?.lv||[])){if(!on.has(deg))continue;let prev=null;
     for(const [e,lab,live,st,up] of legs){
-      if(live){if(prev)prev.text+=` → ${lab} 진행`;else{const t=snapT(st);if(t&&st>=firstT){add(t,up?'belowBar':'aboveBar',deg,`→ ${lab} 진행`)}}continue}
+      if(live){const cl=ctxLab(deg,lab,st);if(prev)prev.text+=` → ${cl} 진행`;else{const t=snapT(st);if(t&&st>=firstT){add(t,up?'belowBar':'aboveBar',deg,`→ ${lab} 진행`)}}continue}
       const t=e>=firstT?snapT(e):null;prev=null;
       if(t){add(t,up?'aboveBar':'belowBar',deg,lab);const r=g.get(t+'|'+(up?'aboveBar':'belowBar')).rows;prev=r[r.length-1]}}}
   return [...g.values()]}
@@ -743,7 +749,7 @@ function tsum(){const el=document.getElementById('tsum');if(!el)return;const N=b
   if(pick){const legs=lv[pick],cur=legs[legs.length-1],[,lab,,st,up]=cur,k=keyOf(lab),u=!!up,prev=legs[legs.length-2];
     const days=N-(dayIdx.get(snapT(st))??N);
     const ws=CUR?.wst,conf=ws?ws[2]===1:days>=3;   // 파동 확정 = 라벨·시작일이 3영업일 유지(또는 시작이 3영업일 이전)
-    now.push(`${pick} <b>${prev?prev[1]+' → ':''}${lab} ${u?'상승':'하락'}</b> 진행(${st.slice(5)}~, ${conf?'<span class="g">3영업일 확정</span>':`<span class="y">확정 전${ws&&ws[3]?` · 3일 전 ${ws[3]}`:` · ${days}일째`}</span>`})`);
+    now.push(`${pick} <b>${prev?prev[1]+' → ':''}${ctxLab(pick,lab,st)} ${u?'상승':'하락'}</b> 진행(${st.slice(5)}~, ${conf?'<span class="g">3영업일 확정</span>':`<span class="y">확정 전${ws&&ws[3]?` · 3일 전 ${ws[3]}`:` · ${days}일째`}</span>`})`);
     const ref=(i,low)=>{const L=legs[legs.length-1-i];return L?px(L[3],low):null};
     const imp='12345'.includes(k),trendUp=imp?(k==='2'||k==='4'?!u:u):null;
     eBull=!!(imp&&trendUp&&'123'.includes(k))&&(CUR?.wst?CUR.wst[2]===1:days>=3);   // 확정된 파동만 근거로 셈
