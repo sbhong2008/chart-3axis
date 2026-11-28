@@ -828,6 +828,13 @@ def main():
         days = [x['time'] for x in bars.get('IX:KS11' if mk == 'KR' else 'IX:GSPC', [])]
         d3 = days[-4] if len(days) >= 4 else None
         prev = W_.get(d3, {}).get(it['id']) if d3 else None
+        if prev:   # 11/28 이전 기록(엘리엇 원저 표기: 마이너 I~V·마이뉴트 1~5) → 표준 표기로 바꿔 비교
+            minute = c_[0] in elliott.DEG['마이뉴트'][0] + elliott.DEG['마이뉴트'][1]
+            ro = ['I', 'II', 'III', 'IV', 'V']
+            if not minute and prev[0] in ro:
+                prev = [str(ro.index(prev[0]) + 1), prev[1]]
+            elif minute and prev[0] in '12345' and len(prev[0]) == 1:
+                prev = [elliott.DEG['마이뉴트'][0][int(prev[0]) - 1], prev[1]]
         old_enough = d3 is not None and c_[1] <= d3
         stable = (prev == c_) if prev else None
         it['wst'] = [c_[0], c_[1], 1 if (stable or (stable is None and old_enough)) else 0, prev[0] if prev and prev != c_ else None]

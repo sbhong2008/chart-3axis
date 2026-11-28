@@ -223,11 +223,11 @@ const ewOpt=k=>localStorage.getItem(k)==='1';
 const degOn=()=>new Set([...DEG_DAY,...(ewOpt('ewBig')?DEG_BIG:[])]);
 function drawDegSel(){const el=document.getElementById('degsel');if(!el)return;
   const sw=(d,x)=>`<b style="color:${DEGC0[d]}">●${d}</b> <small class="muted">${x}</small>`;
-  el.innerHTML=`${sw('마이너','I~V·A~C')} ${sw('마이뉴트','1~5·a~c')}
-    <button class="tab ${ewOpt('ewBig')?'on':''}" id="ewBig" title="인터미디에이트 (I)·프라이머리 ①·사이클 cI">큰 파동 3등급 ${ewOpt('ewBig')?'숨기기':'보기'}</button>
+  el.innerHTML=`${sw('마이너','1~5·A~C')} ${sw('마이뉴트','i~v·a~c')}
+    <button class="tab ${ewOpt('ewBig')?'on':''}" id="ewBig" title="인터미디에이트 (1)·프라이머리 ①·사이클 I">큰 파동 3등급 ${ewOpt('ewBig')?'숨기기':'보기'}</button>
     <button class="tab ${ewOpt('ewLine')?'on':''}" id="ewLine" title="파동 꺾임점을 등급별 색 선으로 연결">파동 선 ${ewOpt('ewLine')?'끄기':'연결'}</button>
     <button class="tab ${patOn()?'on':''}" id="patBtn" title="오닐 바닥 패턴·피벗·매수 구간·손절선·50·200일선">패턴 ${patOn()?'숨기기':'보기'}</button>
-    ${ewOpt('ewBig')?' '+sw('인터미디에이트','(I)·(A)')+' '+sw('프라이머리','①·Ⓐ')+' '+sw('사이클','cI·cA'):''}`;
+    ${ewOpt('ewBig')?' '+sw('인터미디에이트','(1)·(A)')+' '+sw('프라이머리','①·Ⓐ')+' '+sw('사이클','I·A'):''}`;
   const t=k=>()=>{localStorage.setItem(k,ewOpt(k)?'0':'1');drawDegSel();window.__applyWaves&&window.__applyWaves()};
   document.getElementById('ewBig').onclick=t('ewBig');document.getElementById('ewLine').onclick=t('ewLine');
   document.getElementById('patBtn').onclick=()=>{localStorage.setItem('patOff',patOn()?'1':'0');drawDegSel();window.__applyWaves&&window.__applyWaves()};}
