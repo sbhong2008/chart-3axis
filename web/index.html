@@ -661,7 +661,9 @@ function ctxLab(deg,lab,st){const lv=Object.fromEntries((ew?.lv||[]).map(([d,l])
 function waveGroups(){const on=degOn(),g=new Map();
   const add=(t,pos,deg,text)=>{const k=t+'|'+pos;if(!g.has(k))g.set(k,{time:t,pos,rows:[]});g.get(k).rows.push({deg,text})};
   for(const [deg,legs] of (ew?.lv||[])){if(!on.has(deg))continue;let prev=null;
-    for(const [e,lab,live,st,up] of legs){
+    const par=DEGO[DEGO.indexOf(deg)-1];   // 한 단계 위 등급
+    for(const [e,lab,live,st,up,dup] of legs){
+      if(dup&&on.has(par)){prev=null;continue}   // 하위로 안 쪼개진 파동 = 위 등급과 같은 구간·같은 문자 → 위 등급이 켜져 있으면 글자 생략
       if(live){const cl=ctxLab(deg,lab,st);if(prev)prev.text+=` → ${cl} 진행`;else{const t=snapT(st);if(t&&st>=firstT){add(t,up?'belowBar':'aboveBar',deg,`→ ${lab} 진행`)}}continue}
       const t=e>=firstT?snapT(e):null;prev=null;
       if(t){add(t,up?'aboveBar':'belowBar',deg,lab);const r=g.get(t+'|'+(up?'aboveBar':'belowBar')).rows;prev=r[r.length-1]}}}
@@ -753,7 +755,17 @@ function tsum(){const el=document.getElementById('tsum');if(!el)return;const N=b
     const ref=(i,low)=>{const L=legs[legs.length-1-i];return L?px(L[3],low):null};
     const imp='12345'.includes(k),trendUp=imp?(k==='2'||k==='4'?!u:u):null;
     eBull=!!(imp&&trendUp&&'123'.includes(k))&&(CUR?.wst?CUR.wst[2]===1:days>=3);   // 확정된 파동만 근거로 셈
-    let m='',r=null;
+    let m='',r=null,sh='';
+    // 얕은 조정 점검(실무 지침): 2·4파가 앞 충격의 23.6% 미만이고 기간도 20% 미만이면 조정 미완 가능 → 3·5파 확인을 늦춤
+    const dIdx=d=>dayIdx.get(snapT(d)),lu=u;   // lu: 지금 파동 방향
+    if(imp&&'35'.includes(k)&&legs.length>=3){const c=legs[legs.length-2],a=legs[legs.length-3],cu=!!c[4];
+      const A0=px(a[3],!cu),A1=px(a[0],cu),C1=px(c[0],!cu),ta=dIdx(a[0])-dIdx(a[3]),tc=dIdx(c[0])-dIdx(c[3]);
+      if(A0&&A1&&C1&&ta>0){const dp=Math.abs(C1-A1)/Math.abs(A1-A0),tm=tc/ta;
+        if(dp<.236&&tm<.2){sh=`앞 ${+k-1}파 조정이 얕고 짧음(${(dp*100).toFixed(0)}%·기간 ${(tm*100).toFixed(0)}%) — 조정 미완 가능, ${k}파 확인 늦춤`;eBull=false}}}
+    if(imp&&'24'.includes(k)&&legs.length>=2){const a=legs[legs.length-2],A0=px(a[3],!lu),A1=px(a[0],lu),i0=dIdx(st);
+      if(A0&&A1&&i0!=null){let ex=lu?-Infinity:Infinity;for(let i=i0;i<=N;i++)ex=lu?Math.max(ex,bars[i].high):Math.min(ex,bars[i].low);
+        const dp=Math.abs(ex-A1)/Math.abs(A1-A0);
+        if(dp<.236)sh=`${k}파 조정 아직 얕음(${(dp*100).toFixed(0)}%) — 23.6~38.2% 가격 조정이나 기간 조정이 더 나올 수 있어 ${trendUp?`${+k+1}파 진입 서두르지 않기`:`${+k+1}파 하락 재개 판단 늦춤`}`}}
     if(imp&&trendUp){
       if(k==='1'){m='새 상승 1파 초기 — 2파 눌림이 1파 시작가 위에서 멈추는지 확인 후 진입 검토';r=['1파 시작',ref(0,true)];tone='g'}
       if(k==='2'){m='상승 1파 뒤 2파 눌림 — 1파 시작가를 지키면 3파 대기(가장 흔한 진입 자리)';r=['1파 시작',ref(1,true)];tone='g'}
@@ -766,7 +778,8 @@ function tsum(){const el=document.getElementById('tsum');if(!el)return;const N=b
       if(k==='B')r=['A 시작(넘으면 해석 변경)',ref(1,false)]}
     else{m=k==='A'?'상승 뒤 조정 A — 매수 보류':k==='B'?'반등 중 눌림 B — C 반등 여부 관찰':k==='C'?'조정 마지막 C 하락 — 5개 완료·투매 뒤 C → 1 전환을 관찰':'조정 하락 — 관망';
       tone=k==='C'?'y':'r'}
-    if(m)act.push(m+(r&&r[1]!=null?` · 기준 ${r[0]} <b>${P(r[1])}</b>`:''));}
+    if(m)act.push(m+(r&&r[1]!=null?` · 기준 ${r[0]} <b>${P(r[1])}</b>`:''));
+    if(sh){act.push(`<span class="y">${sh}</span>`);if(tone==='g')tone='y'}}
   else act.push(adx[N]>=25?(dir[N]>0?'상승 추세 — 눌림 확인 후 동참':'하락 추세 — 관망'):'방향 불분명 — 돌파 확인 전 관망');
   // 거래량 경고·최근 신호(5거래일)
   if(ddn[N]>=5){now.push(`<span class="r">분산일 ${ddn[N]}/4주(대량 매도 누적)</span>`);if(tone==='g')tone='y'}else if(ddn[N]>=3)now.push(`<span class="y">분산일 ${ddn[N]}/4주</span>`);

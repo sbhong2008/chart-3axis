@@ -87,6 +87,9 @@ LIVE_W = 4.0                   # 진행 중 파동이 이미 반대 꼭지를 �
 TRI_EXT = True                 # 역대칭·오름새·내림새 삼각형도 인정
 TRI_FLAT = 0.1                 # 오름새·내림새 삼각형: 평평한 변 허용 폭(a파 크기 대비)
 DIAG_PEN = 3.0                 # 대각 삼각형(4파의 1파 영역 침범 예외) 감점, None = 허용 안 함
+WK_RG = False                  # 주봉 등급에도 다시 묶기·얕은 조정 지침 적용
+SHALLOW_W = 1.0               # 얕고 짧은 2·4파 감점(조정 미완)
+REGROUP = True                 # 상위 파동 안 하위 수를 원칙(충격 5·조정 3)대로 다시 묶기
 CH_W, VOL_W, EXT_W = 0.5, 0.5, 0.5   # 궤도선·거래량·연장 뒤 되돌림 지침 가중치
 FIB_W = 0.5                    # 피보나치·교대 지침 가중치
 B_MAX, B_HARD, B_W = 1.38, 1.618, 20.0   # 조정 안 B파: A의 138.2%부터 감점, 161.8% 초과 불가
@@ -95,12 +98,13 @@ WK_BAR = False                 # 주봉 등급: 충격 극점을 실제 봉으�
 RESTART = 6.0                  # 규칙상 이어갈 수 없을 때 새로 세기 감점
 
 
-def count_level(P, rmq, restart=False, cut=(), bar=False, vol=None):
+def count_level(P, rmq, restart=False, cut=(), bar=False, vol=None, sh=True, pc=None):
     """P: 교대 피벗 [(i, 'H'|'L', 가격)]. 반환: 다리 목록 [(시작피벗, 끝피벗, pos, d)] (마지막 다리 = 진행 중)."""
     n = len(P)
     if n < 4:
         return []
     v = [math.log(p[2]) for p in P]                          # 로그 가격(장기 차트 비율 비교)
+    vc = [math.log(pc(p)) for p in P] if pc else v           # 피벗 날의 일 종가(로그) — '가장 짧은 파동' 판정용
     unit = statistics.median(abs(v[i + 1] - v[i]) for i in range(n - 1)) or 1e-9
     up = [p[1] == 'L' for p in P]   # 이 피벗에서 시작하는 다리가 상승인가
 
@@ -153,6 +157,8 @@ def count_level(P, rmq, restart=False, cut=(), bar=False, vol=None):
         s = 0.0
         if pos == 1 and g(0) is not None and d * (ext(b[1], b[2], -d) - g(0)) <= 0:
             return None                                      # 2파(가장 깊은 곳)가 1파 시작을 넘음
+        if pos == 3 and g(2) is not None and d * (ext(b[3], b[4], -d) - g(2)) <= 0:
+            return None                                      # 4파가 3파를 100% 넘게 되돌림(3파 시작을 넘음) — 1·2파를 모를 때도 적용
         if pos == 2 and g(1) is not None and not final and d * (g(3) - g(1)) <= 0:
             return None                                      # 3파가 1파 끝을 못 넘음
         mm = lambda x: b[x + 1] - b[x] if b[x] is not None and b[x + 1] is not None else 1   # 다리 x의 하위 파동 수
@@ -167,8 +173,10 @@ def count_level(P, rmq, restart=False, cut=(), bar=False, vol=None):
             s -= DIAG_PEN
         if pos == 4 and all(b[x] is not None for x in range(6)):
             w1, w3, w5 = abs(g(1) - g(0)), abs(g(3) - g(2)), abs(g(5) - g(4))
-            if w3 < w1 and w3 < w5:
-                return None                                  # 3파 최단
+            gc = lambda x: vc[b[x]]
+            c1, c3, c5 = abs(gc(1) - gc(0)), abs(gc(3) - gc(2)), abs(gc(5) - gc(4))
+            if c3 < c1 and c3 < c5:
+                return None                                  # 3파 최단(일 종가 기준 — 장중 꼬리에 흔들리지 않게)
             if d * (ext(b[3], b[4], -d) - g(1)) <= 0 and not (w5 < w3 and mm(4) in (1, 3)):
                 return None                                  # 대각 삼각형이면 5파도 좁혀지고 3개짜리여야 함
             if not final and d * (g(5) - g(3)) <= 0:
@@ -195,8 +203,8 @@ def count_level(P, rmq, restart=False, cut=(), bar=False, vol=None):
                 r = w3 / w1                                  # 3파: 보통 1파의 1.618배 안팎
                 s += FIB_W * .5 if 1.382 <= r <= 2.9 else 0
             if pos == 3 and w3 and w4 is not None:
-                r = w4 / w3                                  # 4파 되돌림: 보통 23.6~50%
-                s += FIB_W if .236 <= r <= .5 else -FIB_W if r > .618 else 0
+                r = w4 / w3                                  # 4파 되돌림: 보통 23.6~50%, 14.6% 미만 = 조정 미완 가능
+                s += FIB_W if .236 <= r <= .5 else -FIB_W if r > .618 or (sh and r < .146) else 0
                 if w1 and w2 is not None and abs(w2 / w1 - r) > .15:
                     s += FIB_W * .5                          # 교대: 2파와 4파의 깊이가 다름
             if pos == 6 and wa and wb is not None:
@@ -206,8 +214,18 @@ def count_level(P, rmq, restart=False, cut=(), bar=False, vol=None):
                 r = wc / wa                                  # C ≈ A (61.8~161.8%)
                 s += FIB_W if .618 <= r <= 1.618 else 0
         t = lambda x: P[b[x]][0]
-        if CH_W and not final and pos in (3, 4) and all(b[x] is not None for x in range(pos + 2)):
-            if pos == 3:                                     # 4파 목표: 1·3파 끝을 잇는 선과 평행하게 2파 끝을 지나는 선
+        if SHALLOW_W and sh and not final and pos in (1, 3) and all(b[x] is not None for x in range(pos - 1, pos + 2)):
+            # 얕고 짧은 2·4파 = 조정 미완(진짜 2·4파는 더 뒤) → 3·5파 시작을 늦춰 봄: 가격 23.6% 미만이면서 기간도 앞 파동의 20% 미만
+            dp = abs(g(pos + 1) - g(pos)) / (abs(g(pos) - g(pos - 1)) or 1e-9)
+            tm = (t(pos + 1) - t(pos)) / ((t(pos) - t(pos - 1)) or 1)
+            if dp < .236 and tm < .2:
+                s -= SHALLOW_W
+        if CH_W and not final and pos in (2, 3, 4) and all(b[x] is not None for x in range(pos + 2)):
+            if pos == 2:                                     # 3파 목표: 0·2(기본선)와 평행하게 1파 끝을 지나는 상위 궤도선
+                e3 = g(1) + (g(2) - g(0)) / ((t(2) - t(0)) or 1) * (t(3) - t(1))
+                w3_ = abs(g(3) - g(2)) or 1e-9
+                s += CH_W * .5 if -.25 * w3_ <= d * (g(3) - e3) <= .5 * w3_ else 0
+            elif pos == 3:                                     # 4파 목표: 1·3파 끝을 잇는 선과 평행하게 2파 끝을 지나는 선
                 e4 = g(2) + (g(3) - g(1)) / ((t(3) - t(1)) or 1) * (t(4) - t(2))
                 s += CH_W if abs(g(4) - e4) <= .25 * abs(g(3) - g(2)) else 0
             else:                                            # 5파 목표: 2·4파 기준선과 평행하게 3파 끝을 지나는 궤도선(뚫고 넘어감 흔함)
@@ -354,8 +372,22 @@ def imp_ok(kids):
     """하위 5개가 충격파 3대 규칙(2파 < 1파 시작, 3파 최단 아님, 4파 1파 영역 밖)을 지키는가"""
     p = [kids[0]['pa']] + [c['pb'] for c in kids]
     d = 1 if p[5] > p[0] else -1
-    w = [abs(p[i + 1] - p[i]) for i in range(5)]
+    q = [kids[0].get('ca', kids[0]['pa'])] + [c.get('cb', c['pb']) for c in kids]
+    w = [abs(q[i + 1] - q[i]) for i in range(5)]             # 3파 최단 = 일 종가 기준
     return d * (p[2] - p[0]) > 0 and d * (p[4] - p[1]) > 0 and not (w[2] < w[0] and w[2] < w[4])
+
+
+def part_ok(kids, pk=''):
+    """진행 중 충격의 앞부분(2~4개)이 규칙을 지키는가: 2파 < 1파 시작, 4파 1파 영역 밖(5·C 자리 대각 삼각형은 2파 끝 위)"""
+    p = [kids[0]['pa']] + [c['pb'] for c in kids]
+    d = 1 if p[1] > p[0] else -1
+    if len(p) > 2 and d * (p[2] - p[0]) <= 0:
+        return False
+    if len(p) > 3 and d * (p[3] - p[1]) <= 0:
+        return False                                         # 3파가 1파 끝을 못 넘음
+    if len(p) > 4 and d * (p[4] - (p[2] if pk in '5C' else p[1])) <= 0:
+        return False
+    return True
 
 
 MOT_M, COR_M = {1, 5, 9, 13}, {1, 3, 5, 7, 11}   # 하위 파동 수: 충격 = 5(연장 9), 조정 = 3(삼각형 5·복합 7)
@@ -388,7 +420,8 @@ def relabel(parent, child):
             keys = '1' if motive else 'A'                    # 막 시작한 상위 파동의 첫 하위 파동
         elif n == 1:
             keys = P['k']                                    # 하위 등급에서 더 쪼개지지 않음 → 같은 파동
-        elif motive and ((n == 5 and imp_ok(kids)) or (P['live'] and n < 5)):
+            kids[0]['dup'] = 1                               # 화면: 상위 라벨과 겹치므로 글자 생략
+        elif motive and ((n == 5 and imp_ok(kids)) or (P['live'] and n < 5 and part_ok(kids, P['k']))):
             keys = '12345'[:n]
         elif not motive and (n == 3 or (P['live'] and n < 3)):
             keys = 'ABC'[:n]
@@ -402,6 +435,91 @@ def relabel(parent, child):
             continue                                         # 붙일 라벨과 하위 파동 수가 안 맞으면(예: 3개짜리에 '1') 하위 해석 유지
         for c, k in zip(kids, keys):
             c['k'] = k
+
+
+def _odd_parts(n, t):
+    """n개를 t묶음(각 홀수 개)으로 나누는 모든 방법 — 묶음마다 방향이 번갈아 바뀜"""
+    if t == 1:
+        if n % 2:
+            yield (n,)
+        return
+    for a in range(1, n - t + 2, 2):
+        for rest in _odd_parts(n - a, t - 1):
+            yield (a,) + rest
+
+
+def _merge(units, sizes):
+    out, i = [], 0
+    for z in sizes:
+        g = units[i:i + z]
+        i += z
+        out.append({'s': g[0]['s'], 'e': g[-1]['e'], 'k': '', 'up': g[0]['up'], 'pa': g[0]['pa'], 'pb': g[-1]['pb'], 'ca': g[0].get('ca', g[0]['pa']), 'cb': g[-1].get('cb', g[-1]['pb']),
+                    'sz': abs(g[-1]['pb'] - g[0]['pa']), 'm': z, 'live': g[-1]['live']})
+    return out
+
+
+def _best_split(units, motive, pk):
+    """units(하위 다리)를 원칙대로 묶음: 충격 = 5개(3대 규칙·5-3-5-3-5), 조정 = 3개(지그재그 5-3-5·플랫 3-3-5, B ≤ A 161.8%).
+    규칙을 지키는 묶음 중 구조(fits)·실무 비율이 가장 잘 맞는 것, 없으면 None."""
+    t = 5 if motive else 3
+    n = len(units)
+    if n < t or (n - t) % 2 or n > 41:
+        return None
+    best, bs = None, None
+    for sizes in _odd_parts(n, t):
+        g = _merge(units, sizes)
+        p = [g[0]['pa']] + [x['pb'] for x in g]
+        w = [abs(p[i + 1] - p[i]) for i in range(t)]
+        if motive:
+            if not imp_ok(g):
+                continue
+            keys = '12345'
+            sc = (w[2] >= w[0]) * .5 + (.236 <= w[1] / (w[0] or 1e-9) <= .786) * .5 + (.236 <= w[3] / (w[2] or 1e-9) <= .618) * .5
+            for c in (1, 3):                                 # 얕고 짧은 2·4파 = 조정 미완 가능(SHALLOW_W)
+                tm = (g[c]['e'] - g[c]['s']) / ((g[c - 1]['e'] - g[c - 1]['s']) or 1)
+                if w[c] / (w[c - 1] or 1e-9) < .236 and tm < .2:
+                    sc -= SHALLOW_W
+        else:
+            if w[1] > B_HARD * w[0]:
+                continue
+            keys = 'ABC'
+            sc = (.618 <= w[2] / (w[0] or 1e-9) <= 1.618) * .5
+        sc += 2.0 * fits(keys, g, pk)
+        sc -= .1 * max(sizes)                                # 한 묶음에 몰리지 않게(연장은 허용하되 균형 선호)
+        if bs is None or sc > bs:
+            best, bs = g, sc
+    if best:
+        for x, k in zip(best, keys):
+            x['k'] = k
+    return best
+
+
+def regroup(parent, mid, low=None):
+    """프랙탈 원칙 보강(책: 홀수 파동 = 5개, 짝수 파동 = 3개): 상위 파동 안의 하위 파동 수가 원칙과 다르면
+    ① 하위가 너무 많으면(예: 연장으로 9개) 하위 다리를 5개(3개)로 묶고, ② 너무 적으면(1·3개) 한 단계 더 아래 다리로 다시 묶음.
+    mid 목록을 제자리에서 바꿈. 진행 중 상위 파동은 건드리지 않음."""
+    for P in parent:
+        if P['live']:
+            continue
+        motive = P['k'] in '135C' or (P['k'] == 'A' and P['m'] == 5)
+        kids = [c for c in mid if c['s'] >= P['s'] and c['e'] <= P['e']]
+        n = len(kids)
+        if not kids or kids[0]['s'] != P['s'] or kids[-1]['e'] != P['e']:
+            continue                                         # 경계가 안 맞으면(자료 시작 등) 그대로
+        if (motive and n == 5 and imp_ok(kids)) or (not motive and (n == 3 or n == 7 or (n == 5 and tri(kids)))):
+            continue                                         # 이미 원칙대로
+        t = 5 if motive else 3
+        new = None
+        if n > t:
+            new = _best_split(kids, motive, P['k'])
+        if new is None and low:
+            lk = [c for c in low if c['s'] >= P['s'] and c['e'] <= P['e']]
+            if lk and lk[0]['s'] == P['s'] and lk[-1]['e'] == P['e'] and len(lk) > n:
+                new = _best_split(lk, motive, P['k'])
+        if new is None:
+            continue
+        i = mid.index(kids[0])
+        mid[i:i + n] = new
 
 
 def range_ext(H, L):
@@ -425,11 +543,13 @@ def range_ext(H, L):
     return q
 
 
-def count_all(H, L, C, th, degs, must=(), bar=False, V=None):
+def count_all(H, L, C, th, degs, must=(), bar=False, V=None, rg=True, CH=None, CL=None):
     """여러 등급을 아래에서 위로 세고(꺾임 묶기), 라벨은 위에서 아래로 다시 붙임.
     반환: {등급: [{'s','e' 봉 번호, 'k' 라벨키, 'up' 상승 다리, 'm' 하위 수, 'live' 진행 중}]}"""
     P = zigzag(H, L, th)
     rmq = range_ext(H, L)
+    CH, CL = CH or C, CL or C                                # 고점·저점 날의 일 종가(주봉 = 고가일·저가일 종가)
+    pc = lambda p: (CH if p[1] == 'H' else CL)[p[0]]
     vol = None
     if V and any(V):
         cs = [0.0]
@@ -444,14 +564,16 @@ def count_all(H, L, C, th, degs, must=(), bar=False, V=None):
     out = {}
     for deg in degs:
         cut = [i for i, p in enumerate(P) if p[0] in cutb]
-        legs = count_level(P, rmq, cut=cut, bar=bar, vol=vol) or count_level(P, rmq, True, cut, bar, vol)
+        legs = count_level(P, rmq, cut=cut, bar=bar, vol=vol, sh=rg, pc=pc) or count_level(P, rmq, True, cut, bar, vol, sh=rg, pc=pc)
         if len(legs) < 2:
             break
-        out[deg] = [{'s': P[a][0], 'e': P[k][0], 'k': POS[pos], 'up': P[a][1] == 'L', 'sz': abs(math.log(P[k][2] / P[a][2])), 'pa': math.log(P[a][2]), 'pb': math.log(P[k][2]),
+        out[deg] = [{'s': P[a][0], 'e': P[k][0], 'k': POS[pos], 'up': P[a][1] == 'L', 'sz': abs(math.log(P[k][2] / P[a][2])), 'pa': math.log(P[a][2]), 'pb': math.log(P[k][2]), 'ca': math.log(pc(P[a])), 'cb': math.log(pc(P[k])),
                      'm': k - a, 'live': k == len(P) - 1} for a, k, pos, d in legs]
         P = [P[legs[0][0]]] + [P[k] for _, k, _, _ in legs]   # 상위 등급 후보 피벗 = 이번 등급 경계
     names = list(out)
-    for hi, lo in zip(names[::-1], names[::-1][1:]):
+    for j, (hi, lo) in enumerate(zip(names[::-1], names[::-1][1:])):
+        if REGROUP and (rg is True or (rg and hi in rg)):
+            regroup(out[hi], out[lo], out.get(names[::-1][j + 2]) if j + 2 < len(names) else None)
         relabel(out[hi], out[lo])
     return out
 
@@ -464,23 +586,23 @@ def weekly(bars):
         y, w, _ = dt.date.fromisoformat(b['time']).isocalendar()
         if not W or W[-1]['k'] != (y, w):
             W.append({'k': (y, w), 'high': b['high'], 'low': b['low'], 'close': b['close'], 'hd': b['time'], 'ld': b['time'],
-                      'volume': b.get('volume') or 0})
+                      'hc': b['close'], 'lc': b['close'], 'volume': b.get('volume') or 0})
         else:
             x = W[-1]
             if b['high'] >= x['high']:
-                x['high'], x['hd'] = b['high'], b['time']
+                x['high'], x['hd'], x['hc'] = b['high'], b['time'], b['close']
             if b['low'] <= x['low']:
-                x['low'], x['ld'] = b['low'], b['time']
+                x['low'], x['ld'], x['lc'] = b['low'], b['time'], b['close']
             x['close'] = b['close']
             x['volume'] += b.get('volume') or 0
     return W
 
 
-def weekly_count(H, L, C, V=None):
+def weekly_count(H, L, C, V=None, CH=None, CL=None):
     """주봉 등급을 여러 지그재그 문턱(WK_KS)으로 세고, 큰 등급(프라이머리·사이클) 경계가 다른 문턱 결과와
     가장 많이 겹치는 것(합의안)을 고름 — 문턱 하나에 따라 구조가 흔들리지 않게."""
     _, lo, hi = WK_TH
-    outs = [count_all(H, L, C, auto_th(H, L, C, k, lo, hi), [WEEK_DEG0] + WEEKLY_DEG, bar=WK_BAR, V=V) for k in WK_KS]
+    outs = [count_all(H, L, C, auto_th(H, L, C, k, lo, hi), [WEEK_DEG0] + WEEKLY_DEG, bar=WK_BAR, V=V, rg=WK_RG, CH=CH, CL=CL) for k in WK_KS]
     if len(outs) == 1:
         return outs[0]
     bset = [{x['e'] for deg in WEEKLY_DEG for x in o.get(deg, []) if not x['live']} for o in outs]
@@ -500,7 +622,7 @@ def analyze(daily, long_daily=None):
     W = weekly(long_daily or daily)
     if len(W) >= 100:
         H, L, C = [w['high'] for w in W], [w['low'] for w in W], [w['close'] for w in W]
-        out = weekly_count(H, L, C, [w['volume'] for w in W])
+        out = weekly_count(H, L, C, [w['volume'] for w in W], [w['hc'] for w in W], [w['lc'] for w in W])
         for deg, legs in out.items():
             rows = [(W[x['e']]['hd' if x['up'] else 'ld'], sym(deg, x['k']), int(x['live']),
                      W[x['s']]['ld' if x['up'] else 'hd'], int(x['up'])) for x in legs]
@@ -527,10 +649,14 @@ def analyze(daily, long_daily=None):
                 if ei is None or si is None or ei < 0:
                     continue
                 par.append(dict(x, s=si, e=ei))
+            if REGROUP:
+                regroup(par, out[lo], out.get(DAILY_DEG[0]))
             relabel(par, out[lo])                            # 주봉 인터미디에이트 → 일봉 마이너
+            if REGROUP:
+                regroup(out[lo], out.get(DAILY_DEG[0], []))
             relabel(out[lo], out.get(DAILY_DEG[0], []))      # → 마이뉴트
         for deg, legs in out.items():
-            res.append((deg, [(daily[x['e']]['time'], sym(deg, x['k']), int(x['live']), daily[x['s']]['time'], int(x['up'])) for x in legs]))
+            res.append((deg, [(daily[x['e']]['time'], sym(deg, x['k']), int(x['live']), daily[x['s']]['time'], int(x['up'])) + ((1,) if x.get('dup') else ()) for x in legs]))
     order = ['사이클', '프라이머리', '인터미디에이트', '마이너', '마이뉴트']
     res.sort(key=lambda x: order.index(x[0]))
     cur = [[deg, legs[-1][1], legs[-1][3]] for deg, legs in res if legs and legs[-1][2]]
