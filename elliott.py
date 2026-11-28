@@ -24,6 +24,7 @@ DEG = {
     '사이클': (['I', 'II', 'III', 'IV', 'V'], ['A', 'B', 'C', 'D', 'E', 'X']),
 }
 DAILY_DEG = ['마이뉴트', '마이너', '인터미디에이트']
+ORDER = ['사이클', '프라이머리', '인터미디에이트', '마이너', '마이뉴트']
 WEEKLY_DEG = ['프라이머리', '사이클']
 WK_TH = (1.5, .06, .30)       # 주봉 지그재그 문턱 = 최근 1년 주봉 변동폭 중앙값 × k (하한·상한)
 WK_KS = (1.5, 2.0, 2.5)        # 합의안을 고를 주봉 문턱 배수들
@@ -90,6 +91,8 @@ DIAG_PEN = 3.0                 # 대각 삼각형(4파의 1파 영역 침범 예
 WK_RG = False                  # 주봉 등급에도 다시 묶기·얕은 조정 지침 적용
 SHALLOW_W = 1.0               # 얕고 짧은 2·4파 감점(조정 미완)
 REGROUP = True                 # 상위 파동 안 하위 수를 원칙(충격 5·조정 3)대로 다시 묶기
+EXT_FIT = False                # 연장 묶음 안 하위 수 구조(5-3-5-3-5 등)까지 맞아야 연장 표기
+WK_EXT = True                  # 주봉 등급: 하위가 원칙보다 많으면(연장) 전환점은 그대로 두고 라벨만 '(3)의 1~5'처럼 연장 표기
 CH_W, VOL_W, EXT_W = 0.5, 0.5, 0.5   # 궤도선·거래량·연장 뒤 되돌림 지침 가중치
 FIB_W = 0.5                    # 피보나치·교대 지침 가중치
 B_MAX, B_HARD, B_W = 1.38, 1.618, 20.0   # 조정 안 B파: A의 138.2%부터 감점, 161.8% 초과 불가
@@ -458,7 +461,34 @@ def _merge(units, sizes):
     return out
 
 
-def _best_split(units, motive, pk):
+def _ext_plan(units, sizes, keys):
+    """묶음 크기(sizes)대로 나눈 하위 다리들에 붙일 라벨: 1개 묶음 = 그 묶음 라벨, 여러 개 묶음 = 연장 안의 한 단계 아래 파동
+    (충격 묶음 5개 = 1~5, 조정 묶음 3개 = A·B·C, 5개 삼각형 = A~E, 7개 = A·B·C·X·A·B·C). 원칙대로 못 붙이면 None."""
+    plan, i = [], 0
+    for z, gk in zip(sizes, keys):
+        sub = units[i:i + z]
+        i += z
+        if z == 1:
+            plan.append((sub, gk, None))
+            continue
+        gm = gk in '135C' or (gk == 'A' and z == 5)
+        if gm and z == 5 and imp_ok(sub):
+            ks = '12345'
+        elif not gm and z == 3:
+            ks = 'ABC'
+        elif not gm and z == 5 and tri(sub):
+            ks = 'ABCDE'
+        elif not gm and z == 7:
+            ks = 'ABCXABC'
+        else:
+            return None
+        if EXT_FIT and not fits(ks, sub, gk):
+            return None
+        plan.append((sub, ks, gk))
+    return plan
+
+
+def _best_split(units, motive, pk, ext=False):
     """units(하위 다리)를 원칙대로 묶음: 충격 = 5개(3대 규칙·5-3-5-3-5), 조정 = 3개(지그재그 5-3-5·플랫 3-3-5, B ≤ A 161.8%).
     규칙을 지키는 묶음 중 구조(fits)·실무 비율이 가장 잘 맞는 것, 없으면 None."""
     t = 5 if motive else 3
@@ -467,6 +497,8 @@ def _best_split(units, motive, pk):
         return None
     best, bs = None, None
     for sizes in _odd_parts(n, t):
+        if ext and _ext_plan(units, sizes, '12345' if motive else 'ABC') is None:
+            continue                                         # 연장 표기: 묶음 안 하위 다리도 원칙대로 라벨이 붙어야 함
         g = _merge(units, sizes)
         p = [g[0]['pa']] + [x['pb'] for x in g]
         w = [abs(p[i + 1] - p[i]) for i in range(t)]
@@ -522,6 +554,31 @@ def regroup(parent, mid, low=None):
         mid[i:i + n] = new
 
 
+def extlabel(parent, mid):
+    """연장 표기(주봉): 상위 파동 안 하위 다리가 원칙(충격 5·조정 3)보다 많으면, 다리를 합치지 않고(실제 전환점 보존)
+    원칙대로 묶었을 때 여러 다리로 된 묶음(연장 파동)의 다리에 한 단계 아래 라벨을 붙임 — 예) ① 안 9개 = (1)·(2)·[(3)의 1~5]·(4)·(5).
+    다리에 'xg'(속한 연장 파동 라벨) 추가, 'k' = 연장 안 라벨."""
+    for P in parent:
+        if P['live']:
+            continue
+        motive = P['k'] in '135C' or (P['k'] == 'A' and P['m'] == 5)
+        kids = [c for c in mid if c['s'] >= P['s'] and c['e'] <= P['e']]
+        n, t = len(kids), (5 if motive else 3)
+        if n <= t or kids[0]['s'] != P['s'] or kids[-1]['e'] != P['e']:
+            continue
+        if not motive and ''.join(c['k'] for c in kids) in ('ABCXABC', 'ABCDE'):
+            continue                                         # 복합 조정·삼각형으로 이미 라벨이 붙음
+        g = _best_split(kids, motive, P['k'], ext=True)
+        if not g:
+            continue
+        plan = _ext_plan(kids, [x['m'] for x in g], [x['k'] for x in g])
+        for sub, ks, gk in plan:
+            for c, k in zip(sub, ks):
+                c['k'] = k
+                if gk:
+                    c['xg'] = gk
+
+
 def range_ext(H, L):
     """봉 구간 [a, b] 최고 고가(sg=+1)·최저 저가(sg=-1)를 O(1)로 답하는 표(희소 표)."""
     tabs = {1: [list(H)], -1: [list(L)]}
@@ -543,7 +600,7 @@ def range_ext(H, L):
     return q
 
 
-def count_all(H, L, C, th, degs, must=(), bar=False, V=None, rg=True, CH=None, CL=None):
+def count_all(H, L, C, th, degs, must=(), bar=False, V=None, rg=True, CH=None, CL=None, ext=False):
     """여러 등급을 아래에서 위로 세고(꺾임 묶기), 라벨은 위에서 아래로 다시 붙임.
     반환: {등급: [{'s','e' 봉 번호, 'k' 라벨키, 'up' 상승 다리, 'm' 하위 수, 'live' 진행 중}]}"""
     P = zigzag(H, L, th)
@@ -575,6 +632,8 @@ def count_all(H, L, C, th, degs, must=(), bar=False, V=None, rg=True, CH=None, C
         if REGROUP and (rg is True or (rg and hi in rg)):
             regroup(out[hi], out[lo], out.get(names[::-1][j + 2]) if j + 2 < len(names) else None)
         relabel(out[hi], out[lo])
+        if ext:
+            extlabel(out[hi], out[lo])                       # 원칙보다 하위가 많은 상위 파동 = 연장 표기(relabel이 건너뛴 것)
     return out
 
 
@@ -602,7 +661,7 @@ def weekly_count(H, L, C, V=None, CH=None, CL=None):
     """주봉 등급을 여러 지그재그 문턱(WK_KS)으로 세고, 큰 등급(프라이머리·사이클) 경계가 다른 문턱 결과와
     가장 많이 겹치는 것(합의안)을 고름 — 문턱 하나에 따라 구조가 흔들리지 않게."""
     _, lo, hi = WK_TH
-    outs = [count_all(H, L, C, auto_th(H, L, C, k, lo, hi), [WEEK_DEG0] + WEEKLY_DEG, bar=WK_BAR, V=V, rg=WK_RG, CH=CH, CL=CL) for k in WK_KS]
+    outs = [count_all(H, L, C, auto_th(H, L, C, k, lo, hi), [WEEK_DEG0] + WEEKLY_DEG, bar=WK_BAR, V=V, rg=WK_RG, CH=CH, CL=CL, ext=WK_EXT) for k in WK_KS]
     if len(outs) == 1:
         return outs[0]
     bset = [{x['e'] for deg in WEEKLY_DEG for x in o.get(deg, []) if not x['live']} for o in outs]
@@ -624,10 +683,11 @@ def analyze(daily, long_daily=None):
         H, L, C = [w['high'] for w in W], [w['low'] for w in W], [w['close'] for w in W]
         out = weekly_count(H, L, C, [w['volume'] for w in W], [w['hc'] for w in W], [w['lc'] for w in W])
         for deg, legs in out.items():
-            rows = [(W[x['e']]['hd' if x['up'] else 'ld'], sym(deg, x['k']), int(x['live']),
-                     W[x['s']]['ld' if x['up'] else 'hd'], int(x['up'])) for x in legs]
+            low = ORDER[ORDER.index(deg) + 1]
+            rows = [(W[x['e']]['hd' if x['up'] else 'ld'], f"{sym(deg, x['xg'])}의 {sym(low, x['k'])}" if x.get('xg') else sym(deg, x['k']), int(x['live']),
+                     W[x['s']]['ld' if x['up'] else 'hd'], int(x['up'])) + ((0, sym(deg, x['xg'])) if x.get('xg') else ()) for x in legs]
             res.append((deg, rows))
-            for e, _, live, st, _ in rows:
+            for e, _, live, st, _, *_ in rows:
                 must.add(st)
                 if not live:
                     must.add(e)
@@ -643,7 +703,7 @@ def analyze(daily, long_daily=None):
         if wint and lo in out:
             tix = {b['time']: i for i, b in enumerate(daily)}
             par = []
-            for x, (e, _, live, st, _) in wint:
+            for x, (e, _, live, st, _, *_) in wint:
                 ei = n - 1 if live else tix.get(e, -1 if e < daily[0]['time'] else None)
                 si = tix.get(st, -1 if st < daily[0]['time'] else None)
                 if ei is None or si is None or ei < 0:
@@ -657,7 +717,6 @@ def analyze(daily, long_daily=None):
             relabel(out[lo], out.get(DAILY_DEG[0], []))      # → 마이뉴트
         for deg, legs in out.items():
             res.append((deg, [(daily[x['e']]['time'], sym(deg, x['k']), int(x['live']), daily[x['s']]['time'], int(x['up'])) + ((1,) if x.get('dup') else ()) for x in legs]))
-    order = ['사이클', '프라이머리', '인터미디에이트', '마이너', '마이뉴트']
-    res.sort(key=lambda x: order.index(x[0]))
+    res.sort(key=lambda x: ORDER.index(x[0]))
     cur = [[deg, legs[-1][1], legs[-1][3]] for deg, legs in res if legs and legs[-1][2]]
     return {'lv': [[deg, [list(x) for x in legs]] for deg, legs in res], 'cur': cur}
